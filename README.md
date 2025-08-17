@@ -87,6 +87,7 @@ The badge has the ability to monitor the voltage of the AA batteries through a v
 ## Red LED - IO#11
 
 The badge features a simple LED you can blink on and off for testing
+
 <img width="537" height="383" alt="Screenshot 2025-08-17 at 10 02 42 AM" src="https://github.com/user-attachments/assets/34016ebc-02f5-4bed-89e5-9397f1ee9053" />
 
 ## USB Port
