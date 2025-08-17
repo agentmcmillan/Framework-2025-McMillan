@@ -1,5 +1,6 @@
 # Framework-2025-Badge
-Frame:Work NYC 2025 Interactive Pixel Badge Kitty
+Frame:Work NYC 2025 Interactive Pixel Badge Kitty - Badges Generously sponsored by Fuse Technical Group https://www.fuse-tg.com
+
 
 <img width="812" height="905" alt="Screenshot 2025-08-17 at 10 05 04 AM" src="https://github.com/user-attachments/assets/22a9af30-1bf0-447c-8f25-cd9704c998a3" />
 
