@@ -1,5 +1,6 @@
 # Framework-2025-Badge
 Frame:Work NYC 2025 Interactive Pixel Badge Kitty
+
 <img width="812" height="905" alt="Screenshot 2025-08-17 at 10 05 04 AM" src="https://github.com/user-attachments/assets/22a9af30-1bf0-447c-8f25-cd9704c998a3" />
 
 <img width="864" height="947" alt="Screenshot 2025-08-17 at 10 05 17 AM" src="https://github.com/user-attachments/assets/08b9def8-2ac1-4ae6-a733-4a70c84a2668" />
@@ -21,6 +22,7 @@ Optional expansion headers for hardware hacking
 
 Getting started with the RP2040
 The raspberry pi RP2040 chip is super easy to use. Because this design is based on the Raspberry Pi Pico, a wide variety of tutorials and example code exists for this platform. 
+
 <img width="1122" height="738" alt="Screenshot 2025-08-17 at 10 06 19 AM" src="https://github.com/user-attachments/assets/a5e80cf0-fb2f-48fa-8716-27341e9cd766" />
 
 More information about the RP2040 can be found here https://www.raspberrypi.com/documentation/microcontrollers/silicon.html#rp2040
@@ -66,6 +68,7 @@ The Infrared TX is simply an Infrared LED that you can blink on and off really f
 ## Buttons - IO#5, 6, and 7
 
 IO Pins can also be configured as inputs to read the state of buttons. The buttons on this badge are normally open and are considered pressed when they are pulled to ground. The buttons are IO#5-7 from Left to Right
+
 <img width="593" height="197" alt="Screenshot 2025-08-17 at 9 57 51 AM" src="https://github.com/user-attachments/assets/12a1ac62-03f2-42ad-a901-8571498a9e8a" />
 
 
@@ -93,6 +96,7 @@ The badge features a simple LED you can blink on and off for testing
 ## USB Port
 
 The onboard USB port can be configured with various libraries, such as Tiny USB, for all sorts of neat applications, from serial interfaces to keyboard emulators, to audio devices. We've used this chip's USB functionality in the past to emulate a USB sound card to provide timecode to windows computers.
+
 <img width="636" height="433" alt="Screenshot 2025-08-17 at 10 03 17 AM" src="https://github.com/user-attachments/assets/aca6f73c-70b2-44f1-b831-0daf690bc1a6" />
 
 
@@ -113,12 +117,14 @@ IO#23, 24, and 25 - For connecting to various external devices
 IO#28 (ADC#2) - A special analog input pin that can read voltages, useful for sensors
 
 The following image shows how these pins are laid out. The schematic and PCB files included in this repository can show how to build a board that connects to this expansion port.
+
  <img width="1334" height="767" alt="Screenshot 2025-08-17 at 9 42 59 AM" src="https://github.com/user-attachments/assets/013c7f2c-18e0-4163-838f-4f8988aef018" />
 
 
 ## DVI "Whisker" Port
 
 We chose to add DVI output to our board using an existing open source board called the DVI Sock. This board connects a specific set of IO pins to an HDMI plug in order to allow the RP2040 to drive a display with a 640x480 DVI signal. 
+
 <img width="757" height="935" alt="Screenshot 2025-08-17 at 9 56 45 AM" src="https://github.com/user-attachments/assets/be0a78f2-fa07-4865-805a-9eac2667bf02" />
 
 The DVI Sock can be found here:
@@ -133,6 +139,7 @@ The DVI expansion uses IO#12-IO#19
 ## SAO Port
 
 In the badge hacking community, a standard developed for connecting Simple Add Ons to existing hardware badges, using a 4-6 pin socket on the badge with matching pins on the add on. This allows for hackers to dress their badges up with flair that pulls power from the main badge. We are able to re-use some of the whisker header pins in a slightly different shape to allow for a basic 4 pin SAO port, when a header is soldered to the top side of the badge. 
+
 <img width="796" height="935" alt="Screenshot 2025-08-17 at 9 55 27 AM" src="https://github.com/user-attachments/assets/c90a2857-cfbf-4ac1-8e1c-24587efb2883" />
 
 
