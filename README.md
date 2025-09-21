@@ -6,6 +6,13 @@ Frame:Work NYC 2025 Interactive Pixel Badge Kitty - Badges Generously "sponsored
 
 <img width="864" height="947" alt="Screenshot 2025-08-17 at 10 05 17 AM" src="https://github.com/user-attachments/assets/08b9def8-2ac1-4ae6-a733-4a70c84a2668" />
 
+# Getting started with thge software.
+
+Some tutorial code for how to setup the LED matrix display can be found here 
+
+https://github.com/mkohler99/FrameworkNYBadge_Tutorials/
+
+
 
 # Getting started with the hardware.
 
