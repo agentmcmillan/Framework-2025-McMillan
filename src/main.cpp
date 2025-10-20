@@ -1,299 +1,123 @@
 #include <Arduino.h>
-#include <FastLED.h>
-#include <FastLED_NeoMatrix.h>
-#include <Adafruit_GFX.h>
-#include <IRremote.hpp>     // capture only
-#include <LittleFS.h>
-#include <ArduinoJson.h>
+#include <IRremote.hpp>   // IRremote v4.x
 
-#include "protocol_sirc20.h"
-
-// ===== Pins (your spec) =====
-#define PIXEL_PIN 4
-#define IR_RECEIVE_PIN 27
-#define IR_TX 3
-#define BUILTIN_LED 11
-#define MEOW 23
-#define PURR 24
-
-#define BTN1 5
-#define BTN2 6
-#define BTN3 7
-
-// ===== Matrix =====
-#define WIDTH 15
-#define HEIGHT 7
-#define NUM_LEDS (WIDTH*HEIGHT)
-#define COLOR_ORDER GRB
-#define CHIPSET WS2812
-
-CRGB leds[NUM_LEDS];
-FastLED_NeoMatrix *matrix = new FastLED_NeoMatrix(
-  leds, WIDTH, HEIGHT,
-  NEO_MATRIX_TOP + NEO_MATRIX_LEFT + NEO_MATRIX_COLUMNS + NEO_MATRIX_PROGRESSIVE
-);
-
-// ===== State / Config (very small stub for now) =====
-struct BadgeConfig {
-  char     name[24] = "Badge";
-  uint16_t id       = 0;          // 0..511
-  uint8_t  brightness = 40;       // 0..128
-  uint32_t colorRGB   = 0x00FF00; // default green
-  uint32_t unlockedMask = 0;      // 32 charms
-  uint32_t score = 0;
-} CFG;
-
-static void saveConfig() {
-  StaticJsonDocument<256> doc;
-  doc["name"] = CFG.name;
-  doc["id"]   = CFG.id;
-  doc["b"]    = CFG.brightness;
-  doc["c"]    = CFG.colorRGB;
-  doc["um"]   = CFG.unlockedMask;
-  doc["sc"]   = CFG.score;
-  File f = LittleFS.open("/cfg.json", "w");
-  if (f) serializeJson(doc, f);
-  f.close();
-}
-static void loadConfig() {
-  File f = LittleFS.open("/cfg.json", "r");
-  if (!f) return;
-  StaticJsonDocument<256> doc;
-  DeserializationError e = deserializeJson(doc, f);
-  f.close();
-  if (e) return;
-  strlcpy(CFG.name, doc["name"] | "Badge", sizeof(CFG.name));
-  CFG.id = doc["id"] | 0;
-  CFG.brightness = doc["b"] | 40;
-  CFG.colorRGB = doc["c"] | 0x00FF00;
-  CFG.unlockedMask = doc["um"] | 0;
-  CFG.score = doc["sc"] | 0;
+// ==== change this to your RX pin ====
+#define IR_RX_PIN 27
+// ---- helpers ----
+static inline uint32_t bitrev32(uint32_t x) {
+  x = ((x >> 1) & 0x55555555u) | ((x & 0x55555555u) << 1);
+  x = ((x >> 2) & 0x33333333u) | ((x & 0x33333333u) << 2);
+  x = ((x >> 4) & 0x0F0F0F0Fu) | ((x & 0x0F0F0F0Fu) << 4);
+  x = ((x >> 8) & 0x00FF00FFu) | ((x & 0x00FF00FFu) << 8);
+  x = (x >> 16) | (x << 16);
+  return x;
 }
 
-// ===== Simple UI helpers =====
-static inline uint16_t color565(uint32_t rgb) {
-  uint8_t r=(rgb>>16)&0xFF, g=(rgb>>8)&0xFF, b=rgb&0xFF;
-  return matrix->Color(r,g,b);
-}
-static void drawLineOnce(const String &s, uint16_t c) {
-  matrix->setFont(NULL);
-  matrix->setTextSize(1);
-  matrix->setTextWrap(false);
-  int16_t x1,y1; uint16_t w,h;
-  matrix->getTextBounds(s.c_str(),0,0,&x1,&y1,&w,&h);
-  for (int16_t x=WIDTH; x>-(int)w; --x){
-    matrix->fillScreen(0);
-    matrix->setTextColor(c);
-    matrix->setCursor(x,0);
-    matrix->print(s);
-    FastLED.show();
-    delay(60);
-  }
+static inline uint32_t sirc20FlipToLSB(uint32_t raw, uint8_t bits = 20) {
+  // Flip the lower `bits` and return them right-aligned (LSB-first layout)
+  uint32_t rev = bitrev32(raw);
+  return rev >> (32 - bits);
 }
 
-// ===== Game events =====
-static void recordHit(uint16_t attacker, uint8_t charm) {
-  CFG.score++;
-  saveConfig();
-  // FX: quick flash + tones
-  fill_solid(leds, NUM_LEDS, CRGB::Red); FastLED.show();
-  tone(MEOW, 1200, 80); tone(PURR, 140, 100);
-  delay(120);
-  FastLED.clear(true);
-
-  Serial.printf("[HIT] from=%u charm=%u score=%lu\n", attacker, charm, (unsigned long)CFG.score);
+// ---- unpack for our SIRC-20 layout ----
+// LSB-first word: [0..5]=op, [6..14]=attacker (9b), [15..19]=charm/hi (5b)
+static inline void sirc20Unpack(uint32_t wLSB, uint8_t &op, uint16_t &attacker, uint8_t &charmHi) {
+  op       =  wLSB        & 0x3F;
+  attacker = (wLSB >> 6)  & 0x1FF;
+  charmHi  = (wLSB >> 15) & 0x1F;
 }
 
-static void unlockCharm(uint8_t c) {
-  if (c < 32) {
-    if ((CFG.unlockedMask & (1UL<<c)) == 0) {
-      CFG.unlockedMask |= (1UL<<c);
-      saveConfig();
-      Serial.printf("[UNLOCK] charm %u (mask=0x%08lX)\n", c, (unsigned long)CFG.unlockedMask);
+// For value-style ops (SLEEP, BRIGHT, MESSAGE, SCENE):
+static inline uint16_t sirc20Value14(uint32_t wLSB) {
+  uint16_t low9 = (wLSB >> 6) & 0x1FF;
+  uint16_t hi5  = (wLSB >> 15) & 0x1F;
+  return (hi5 << 9) | low9;   // 14-bit value
+}
+
+// ---- handleIR() core ----
+void handleIR() {
+  if (!IrReceiver.decode()) return;
+
+  auto &d = IrReceiver.decodedIRData;
+
+  // We only care about 20-bit Sony frames for this protocol
+  if (d.numberOfBits == 20 /* && (d.protocol == SONY or tolerant) */) {
+    // Flip to our LSB-first packing
+    uint32_t wLSB = sirc20FlipToLSB(d.decodedRawData, 20);
+
+    uint8_t  op; 
+    uint16_t attacker;
+    uint8_t  hi5;
+    sirc20Unpack(wLSB, op, attacker, hi5);
+
+    switch (op) {
+      case 0x00: { // FIRE
+        uint8_t charm = hi5; // direct 0..31
+        // DEBUG:
+        Serial.printf("[IR] FIRE attacker=%u charm=%u (w=0x%05lX)\n",
+                      attacker, charm, (unsigned long)wLSB);
+        // Effects:
+       // if (charm) { CFG.unlockedMask |= (1UL << (charm & 31)); saveConfig(CFG); }
+        //recordHit(attacker, charm); // your hit handler
+      } break;
+
+      case 0x01: { // SLEEP
+        uint16_t minutes = sirc20Value14(wLSB) & 0x7F;
+        Serial.printf("[IR] SLEEP %u min\n", minutes);
+        //enterSleepForMinutes(minutes);
+      } break;
+
+      case 0x02: { // WAKE
+        Serial.println("[IR] WAKE");
+       // wakeNow();
+      } break;
+
+      case 0x03: { // SET_BRIGHTNESS
+        uint16_t b = sirc20Value14(wLSB) & 0x7F;
+        Serial.printf("[IR] BRIGHT %u\n", b);
+       // applyBrightness(b);  // map 0..128 to FastLED brightness
+      } break;
+
+      case 0x04: { // SHOW_MESSAGE
+        uint16_t v = sirc20Value14(wLSB);
+        uint8_t scrolls   =  v & 0x7F;
+        uint8_t messageId = (v >> 7) & 0x7F;
+        Serial.printf("[IR] MSG id=%u scrolls=%u\n", messageId, scrolls);
+        //showPredefinedMessage(messageId, scrolls);
+      } break;
+
+      case 0x05: { // SPECIAL_SCENE
+        uint16_t sid = sirc20Value14(wLSB) & 0x7F;
+        Serial.printf("[IR] SCENE %u\n", sid);
+       // playSpecialScene(sid);
+      } break;
+
+      default:
+        Serial.printf("[IR] Unknown op=0x%02X rawLSB=0x%05lX\n",
+                      op, (unsigned long)wLSB);
+        break;
     }
-  }
-}
-
-static void applyBrightness(uint8_t b128) {
-  if (b128 > 128) b128 = 128;
-  uint8_t b255 = (uint16_t(b128) * 255u) / 128u;
-  FastLED.setBrightness(b255);
-  FastLED.show();
-  CFG.brightness = b128;
-  saveConfig();
-}
-
-// ===== SIRC-20 tolerant raw decode =====
-// IRremote gives us raw->rawbuf[] in ticks. Sony uses ~600us unit.
-// Start: 2400us mark + 600us space
-// Bit: 600us mark + space(0=600us, 1=1200us), LSB-first.
-static inline bool near(uint32_t v, uint32_t ref, uint8_t pct) {
-  uint32_t lo = (ref * (100 - pct)) / 100, hi = (ref * (100 + pct)) / 100;
-  return v >= lo && v <= hi;
-}
-
-// ===== SIRC-20 tolerant raw decode (RP2040-safe) =====
-// raw->rawbuf is IRRawbufType* (byte ticks) on this core.
-static inline bool near_us(uint32_t v, uint32_t ref, uint8_t pct) {
-  uint32_t lo = (ref * (100 - pct)) / 100, hi = (ref * (100 + pct)) / 100;
-  return v >= lo && v <= hi;
-}
-
-static bool sirc20Decode(uint16_t &outLSBfirst) {
-  if (!IrReceiver.decode()) return false;
-  auto *raw = IrReceiver.decodedIRData.rawDataPtr;
-  Serial.println("msg");
-  if (!raw || raw->rawlen < (2 + 2 * 20)) { IrReceiver.resume(); return false; }
-
-  // NOTE: IRRawbufType is uint8_t on RP2040 build of IRremote
-  const IRRawbufType *buf = raw->rawbuf;
-  const uint16_t n = raw->rawlen;
-
-  // Header: buf[1] mark, buf[2] space (buf[0] is the leading gap)
-  uint32_t hdrMark  = (uint32_t)buf[1] * MICROS_PER_TICK;
-  uint32_t hdrSpace = (uint32_t)buf[2] * MICROS_PER_TICK;
-  if (!near_us(hdrMark, 2400, 30) || !near_us(hdrSpace, 600, 35)) {
-    IrReceiver.resume(); 
-    return false;
-  }
-
-  // Read 20 bits, LSB-first per Sony
-  uint16_t bits = 0;
-  int idx = 3;
-  for (uint8_t i = 0; i < 20; i++) {
-    if (idx + 1 >= n) { IrReceiver.resume(); return false; }
-
-    uint32_t mark  = (uint32_t)buf[idx++] * MICROS_PER_TICK;
-    uint32_t space = (uint32_t)buf[idx++] * MICROS_PER_TICK;
-
-    if (!near_us(mark, 600, 40)) { IrReceiver.resume(); return false; }
-
-    bool isOne  = near_us(space, 1200, 40);
-    bool isZero = near_us(space,  600, 40);
-    if (!isOne && !isZero) { IrReceiver.resume(); return false; }
-
-    if (isOne) bits |= (1u << i); // LSB-first
+  } else {
+    // Not 20-bit Sony? Ignore or log briefly:
+    // Serial.printf("[IR] proto=%u bits=%u raw=0x%08lX\n",
+    //               (unsigned)d.protocol, (unsigned)d.numberOfBits,
+    //               (unsigned long)d.decodedRawData);
   }
 
   IrReceiver.resume();
-  outLSBfirst = bits; // 20-bit SIRC word (LSB-first already)
-  return true;
 }
 
-
-// ===== IR handling =====
-static void handleIR() {
-  uint16_t wLSB;
-  if (!sirc20Decode(wLSB)) return;
-
-  uint8_t  op      = SIRC20::getOp(wLSB);
-  uint16_t value14 = SIRC20::getValue14(wLSB);
-
-  switch(op) {
-    case SIRC20::FIRE: {
-      uint16_t attacker; uint8_t charm;
-      SIRC20::splitFire(wLSB, attacker, charm);
-      // 1) record hit
-      recordHit(attacker, charm);
-      // 2) optional unlock (charm != 0)
-      if (charm != 0) unlockCharm(charm);
-      Serial.printf("[IR] FIRE attacker=%u charm=%u word=0x%05X\n", attacker, charm, wLSB);
-    } break;
-
-    case SIRC20::UNLOCK_CHARM: {
-      uint8_t charm = value14 & 0x1F;
-      if (charm != 0) unlockCharm(charm);
-      Serial.printf("[IR] UNLOCK_CHARM %u\n", charm);
-    } break;
-
-    case SIRC20::SLEEP: {
-      uint8_t minutes = value14 & 0x7F;
-      Serial.printf("[IR] SLEEP %u\n", minutes);
-      // TODO: implement your sleep mode visuals/timer
-    } break;
-
-    case SIRC20::WAKE:
-      Serial.println("[IR] WAKE");
-      // TODO: implement wake
-      break;
-
-    case SIRC20::SET_BRIGHTNESS: {
-      uint8_t b = value14 & 0x7F;
-      applyBrightness(b);
-      Serial.printf("[IR] SET_BRIGHTNESS %u\n", b);
-    } break;
-
-    case SIRC20::SHOW_MESSAGE: {
-      uint8_t scrolls   =  value14 & 0x7F;
-      uint8_t messageId = (value14 >> 7) & 0x7F;
-      Serial.printf("[IR] SHOW_MESSAGE id=%u scrolls=%u\n", messageId, scrolls);
-      // TODO: queue scroll
-    } break;
-
-    case SIRC20::SPECIAL_SCENE: {
-      uint8_t sid = value14 & 0x7F;
-      Serial.printf("[IR] SPECIAL_SCENE %u\n", sid);
-      // TODO: play scene
-    } break;
-
-    case SIRC20::DUMP_STATS:
-      Serial.println("[IR] DUMP_STATS (TBD)");
-      break;
-
-    default:
-      Serial.printf("[IR] Unknown op=0x%02X w=0x%05X\n", op, wLSB);
-      break;
-  }
-}
 
 void setup() {
-  pinMode(BTN1, INPUT_PULLUP);
-  pinMode(BTN2, INPUT_PULLUP);
-  pinMode(BTN3, INPUT_PULLUP);
-  pinMode(MEOW, OUTPUT);
-  pinMode(PURR, OUTPUT);
-
   Serial.begin(115200);
+  delay(100);
+  Serial.println("\n[IRRX] Raw sniffer starting…");
 
-  LittleFS.begin();
-  loadConfig();
-
-  FastLED.addLeds<CHIPSET, PIXEL_PIN, COLOR_ORDER>(leds, NUM_LEDS);
-  FastLED.setMaxPowerInVoltsAndMilliamps(5, 1000);
-  FastLED.setBrightness((uint16_t(CFG.brightness)*255u)/128u);
-  FastLED.clear(true);
-
-  // Simple boot splash
-  fill_solid(leds, NUM_LEDS, CRGB::Black);
-  for (int i=0; i<NUM_LEDS; i+=2) leds[i]=CRGB::Yellow;
-  FastLED.show();
-  delay(1000);
-  FastLED.clear(true);
-
-  // IR receive (we only need raw capture)
-  IrReceiver.begin(IR_RECEIVE_PIN, ENABLE_LED_FEEDBACK);
-  Serial.printf("[IR] Receiver ready on pin %d\n", IR_RECEIVE_PIN);
+  // LED feedback is handy while testing; disable if the board’s LED conflicts.
+  IrReceiver.begin(IR_RX_PIN, ENABLE_LED_FEEDBACK); 
+  Serial.printf("[IRRX] Receiver on pin %d\n", IR_RX_PIN);
 }
 
 void loop() {
-  handleIR();
-
-  // simple idle scroll of name + charms
-  static uint32_t last=0;
-  if (millis()-last > 20) {
-    last = millis();
-    static int16_t x = WIDTH;
-    String s = String(CFG.name) + "  ";
-    for (uint8_t i=0;i<32;i++) if (CFG.unlockedMask & (1UL<<i)) s += char('0'+(i%10));
-    matrix->fillScreen(0);
-    matrix->setFont(NULL);
-    matrix->setTextSize(1);
-    matrix->setTextWrap(false);
-    matrix->setTextColor(color565(CFG.colorRGB));
-    matrix->setCursor(x,0);
-    matrix->print(s);
-    FastLED.show();
-    x--; int16_t w = s.length()*6;
-    if (x < -w) x = WIDTH;
-  }
+ handleIR();
 }
