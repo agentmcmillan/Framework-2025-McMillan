@@ -14,13 +14,38 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            background: linear-gradient(135deg, #2c1f3f 0%, #1a1625 100%);
             color: #fff;
             padding: 20px;
             min-height: 100vh;
             display: flex;
             flex-direction: column;
             align-items: center;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        /* Cat paw prints background decoration */
+        body::before {
+            content: '🐾';
+            position: fixed;
+            top: 10%;
+            left: 5%;
+            font-size: 40px;
+            opacity: 0.1;
+            transform: rotate(-30deg);
+            pointer-events: none;
+        }
+
+        body::after {
+            content: '🐾';
+            position: fixed;
+            bottom: 15%;
+            right: 10%;
+            font-size: 35px;
+            opacity: 0.1;
+            transform: rotate(45deg);
+            pointer-events: none;
         }
 
         header {
@@ -29,21 +54,62 @@
         }
 
         h1 {
-            font-size: 28px;
-            background: linear-gradient(90deg, #00f5ff, #ff00ff);
+            font-size: 32px;
+            background: linear-gradient(90deg, #ff69b4, #ff1493, #ff69b4);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
+            background-size: 200% auto;
+            animation: shimmer 3s linear infinite;
             margin-bottom: 5px;
+            text-shadow: 0 0 20px rgba(255, 105, 180, 0.3);
+        }
+
+        @keyframes shimmer {
+            0% { background-position: 0% center; }
+            100% { background-position: 200% center; }
         }
 
         .subtitle {
-            color: #888;
+            color: #c9a0dc;
             font-size: 14px;
+            font-style: italic;
+        }
+
+        .subtitle::before {
+            content: '😺 ';
+        }
+
+        .subtitle::after {
+            content: ' 😺';
         }
 
         .container {
             max-width: 500px;
             width: 100%;
+            position: relative;
+        }
+
+        /* Additional paw print decorations */
+        .container::before {
+            content: '🐾';
+            position: absolute;
+            top: -10px;
+            right: -15px;
+            font-size: 25px;
+            opacity: 0.15;
+            transform: rotate(15deg);
+            pointer-events: none;
+        }
+
+        .container::after {
+            content: '🐾';
+            position: absolute;
+            bottom: 40px;
+            left: -10px;
+            font-size: 30px;
+            opacity: 0.12;
+            transform: rotate(-25deg);
+            pointer-events: none;
         }
 
         .led-grid {
@@ -51,12 +117,13 @@
             grid-template-columns: repeat(15, 1fr);
             grid-template-rows: repeat(7, 1fr);
             gap: 3px;
-            background: #0a0a0a;
+            background: linear-gradient(135deg, #1a0f2e 0%, #0f0a1a 100%);
             padding: 10px;
-            border-radius: 10px;
-            box-shadow: 0 10px 40px rgba(0, 245, 255, 0.2);
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(255, 105, 180, 0.3), 0 0 60px rgba(138, 43, 226, 0.2);
             margin-bottom: 20px;
             aspect-ratio: 15/7;
+            border: 2px solid rgba(255, 105, 180, 0.2);
         }
 
         .led-pixel {
@@ -77,10 +144,12 @@
         }
 
         .controls {
-            background: #222;
+            background: linear-gradient(135deg, #2a1f3d 0%, #1f1530 100%);
             padding: 15px;
-            border-radius: 10px;
+            border-radius: 15px;
             margin-bottom: 15px;
+            border: 2px solid rgba(255, 105, 180, 0.2);
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
         }
 
         .control-group {
@@ -159,13 +228,18 @@
         }
 
         .btn-send {
-            background: linear-gradient(135deg, #00f5ff, #0099ff);
-            color: #000;
+            background: linear-gradient(135deg, #ff69b4, #ff1493);
+            color: #fff;
             grid-column: span 2;
+            box-shadow: 0 5px 20px rgba(255, 105, 180, 0.4);
+        }
+
+        .btn-send:hover {
+            box-shadow: 0 5px 30px rgba(255, 105, 180, 0.6);
         }
 
         .btn-clear {
-            background: #ff4444;
+            background: linear-gradient(135deg, #8b4789, #6a3068);
             color: #fff;
         }
 
@@ -175,29 +249,50 @@
         }
 
         .status {
-            background: #1a1a1a;
-            padding: 10px;
-            border-radius: 8px;
+            background: linear-gradient(135deg, #2a1f3d 0%, #1f1530 100%);
+            padding: 12px;
+            border-radius: 10px;
             text-align: center;
             font-size: 14px;
             margin-top: 15px;
+            border: 2px solid rgba(255, 105, 180, 0.2);
         }
 
         .status.success {
-            background: #00ff00;
-            color: #000;
+            background: linear-gradient(135deg, #4caf50, #2e7d32);
+            color: #fff;
+            border-color: #4caf50;
+        }
+
+        .status.success::before {
+            content: '😸 ';
         }
 
         .status.error {
-            background: #ff4444;
+            background: linear-gradient(135deg, #f44336, #c62828);
             color: #fff;
+            border-color: #f44336;
+        }
+
+        .status.error::before {
+            content: '🙀 ';
         }
 
         .footer {
             margin-top: 20px;
             text-align: center;
             font-size: 12px;
-            color: #666;
+            color: #8b7ba8;
+        }
+
+        .footer::before {
+            content: '🐾 ';
+            opacity: 0.5;
+        }
+
+        .footer::after {
+            content: ' 🐾';
+            opacity: 0.5;
         }
 
         /* Drawing mode toggle */
@@ -215,15 +310,16 @@
         }
 
         .mode-btn.active {
-            background: linear-gradient(135deg, #00f5ff, #0099ff);
-            color: #000;
+            background: linear-gradient(135deg, #ff69b4, #ff1493);
+            color: #fff;
+            box-shadow: 0 3px 15px rgba(255, 105, 180, 0.4);
         }
     </style>
 </head>
 <body>
     <header>
-        <h1>🐱 PIXEL KITTY</h1>
-        <p class="subtitle">LED Matrix Designer</p>
+        <h1>🐱 PIXEL KITTY 🐱</h1>
+        <p class="subtitle">Meow-gical LED Matrix Designer</p>
     </header>
 
     <div class="container">
@@ -233,15 +329,15 @@
         <!-- Controls -->
         <div class="controls">
             <div class="control-group">
-                <label>Drawing Mode</label>
+                <label>🎨 Drawing Mode</label>
                 <div class="draw-mode">
-                    <button class="mode-btn active" data-mode="draw">Draw</button>
-                    <button class="mode-btn" data-mode="erase">Erase</button>
+                    <button class="mode-btn active" data-mode="draw">🖌️ Draw</button>
+                    <button class="mode-btn" data-mode="erase">🧹 Erase</button>
                 </div>
             </div>
 
             <div class="control-group">
-                <label>Color Selection</label>
+                <label>🎨 Cat-lette (Color Palette)</label>
                 <div class="color-buttons" id="colorButtons">
                     <!-- Colors will be added by JavaScript -->
                 </div>
@@ -249,18 +345,26 @@
 
             <div class="control-group">
                 <div class="action-buttons">
-                    <button class="btn-send" id="btnSend">📡 Send to Badge</button>
-                    <button class="btn-clear" id="btnClear">🗑 Clear</button>
-                    <button class="btn-rainbow" id="btnRainbow">🌈 Rainbow</button>
+                    <button class="btn-send" id="btnSend">😺 Send to Kitty Badge</button>
+                    <button class="btn-clear" id="btnClear">🧼 Clear Canvas</button>
+                    <button class="btn-rainbow" id="btnRainbow">🌈 Rainbow Meow</button>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>🐱 Quick Presets</label>
+                <div class="action-buttons">
+                    <button class="btn-preset" id="btnCatFace" style="background: linear-gradient(135deg, #ff8c42, #ff6b35); color: #fff;">😺 Cat Face</button>
+                    <button class="btn-preset" id="btnHeart" style="background: linear-gradient(135deg, #ff1744, #f50057); color: #fff;">💖 Heart</button>
                 </div>
             </div>
         </div>
 
-        <div class="status" id="status">Draw your design and click "Send to Badge"</div>
+        <div class="status" id="status">😺 Draw your paw-some design and send it to Pixel Kitty!</div>
 
         <div class="footer">
-            Badge IP: <span id="badgeIP">loading...</span><br>
-            Connected to: Framework Badge
+            Kitty Badge IP: <span id="badgeIP">loading...</span><br>
+            Connected to: Pixel Kitty Framework Badge 😻
         </div>
     </div>
 
@@ -400,10 +504,73 @@
             }
         }
 
+        // Cat face pattern
+        function catFacePattern() {
+            clearGrid();
+
+            // Simple cat face on 15x7 grid
+            // Eyes
+            ledMatrix[2][4] = '#ffff00';  // Left eye
+            ledMatrix[2][10] = '#ffff00'; // Right eye
+
+            // Nose
+            ledMatrix[4][7] = '#ff69b4';  // Pink nose
+
+            // Mouth
+            ledMatrix[5][6] = '#ffffff';
+            ledMatrix[5][8] = '#ffffff';
+
+            // Whiskers
+            ledMatrix[3][2] = '#ffffff';
+            ledMatrix[3][12] = '#ffffff';
+            ledMatrix[4][1] = '#ffffff';
+            ledMatrix[4][13] = '#ffffff';
+
+            // Ears
+            ledMatrix[1][3] = '#ff8c42';
+            ledMatrix[1][11] = '#ff8c42';
+            ledMatrix[0][2] = '#ff8c42';
+            ledMatrix[0][12] = '#ff8c42';
+
+            // Update display
+            for (let y = 0; y < ROWS; y++) {
+                for (let x = 0; x < COLS; x++) {
+                    updatePixelDisplay(x, y);
+                }
+            }
+        }
+
+        // Heart pattern
+        function heartPattern() {
+            clearGrid();
+
+            // Heart shape on 15x7 grid
+            const heart = [
+                [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+                [0,0,1,1,1,0,0,0,0,1,1,1,0,0,0],
+                [0,1,1,1,1,1,0,0,1,1,1,1,1,0,0],
+                [0,1,1,1,1,1,1,1,1,1,1,1,1,0,0],
+                [0,0,1,1,1,1,1,1,1,1,1,1,0,0,0],
+                [0,0,0,1,1,1,1,1,1,1,1,0,0,0,0],
+                [0,0,0,0,1,1,1,1,1,1,0,0,0,0,0]
+            ];
+
+            const heartColor = '#ff1744'; // Pink/red heart
+
+            for (let y = 0; y < ROWS; y++) {
+                for (let x = 0; x < COLS; x++) {
+                    if (heart[y][x] === 1) {
+                        ledMatrix[y][x] = heartColor;
+                    }
+                    updatePixelDisplay(x, y);
+                }
+            }
+        }
+
         // Send to badge
         async function sendToBadge() {
             const status = document.getElementById('status');
-            status.textContent = 'Sending to badge...';
+            status.textContent = '📡 Meow-ing your design to Pixel Kitty...';
             status.className = 'status';
 
             try {
@@ -426,18 +593,18 @@
                 });
 
                 if (response.ok) {
-                    status.textContent = '✓ Sent successfully!';
+                    status.textContent = 'Purr-fect! Design sent successfully!';
                     status.className = 'status success';
                 } else {
                     throw new Error('Failed to send');
                 }
             } catch (error) {
-                status.textContent = '✗ Error: ' + error.message;
+                status.textContent = 'Cat-astrophe! Error: ' + error.message;
                 status.className = 'status error';
             }
 
             setTimeout(() => {
-                status.textContent = 'Draw your design and click "Send to Badge"';
+                status.textContent = '😺 Draw your paw-some design and send it to Pixel Kitty!';
                 status.className = 'status';
             }, 3000);
         }
@@ -455,6 +622,8 @@
         document.getElementById('btnSend').addEventListener('click', sendToBadge);
         document.getElementById('btnClear').addEventListener('click', clearGrid);
         document.getElementById('btnRainbow').addEventListener('click', rainbowPattern);
+        document.getElementById('btnCatFace').addEventListener('click', catFacePattern);
+        document.getElementById('btnHeart').addEventListener('click', heartPattern);
 
         // Get badge IP
         document.getElementById('badgeIP').textContent = window.location.hostname;
