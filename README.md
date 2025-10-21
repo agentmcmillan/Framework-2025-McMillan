@@ -6,13 +6,117 @@ Frame:Work NYC 2025 Interactive Pixel Badge Kitty - Badges Generously "sponsored
 
 <img width="864" height="947" alt="Screenshot 2025-08-17 at 10 05 17 AM" src="https://github.com/user-attachments/assets/08b9def8-2ac1-4ae6-a733-4a70c84a2668" />
 
-# Getting started with thge software.
+# Getting started with the software.
 
-Some tutorial code for how to setup the LED matrix display can be found here 
+## Tutorial Resources
 
+Tutorial code for setting up the LED matrix display can be found here:
 https://github.com/mkohler99/FrameworkNYBadge_Tutorials/
 
+## Firmware Examples in This Repository
 
+This repository includes several ready-to-use firmware examples:
+
+### 1. LED Ripple Animation (MicroPython)
+**File:** `led_ripple.py`
+
+A simple button-triggered rainbow ripple animation that demonstrates:
+- LED matrix addressing and control
+- Button input handling
+- Safe power management (15% brightness limit)
+- HSV to RGB color conversion
+
+Press the center "MEOW" button to trigger a rainbow ripple effect emanating from the center of the display.
+
+### 2. Badge LED + TFT Demo (Arduino)
+**Directory:** `Badge_LED_TFT_Demo/`
+
+Combines LED matrix control with a GC9A01 round TFT display (240×240) for enhanced interactivity:
+- Rainbow ripple animation on LED matrix (center button triggered)
+- Real-time battery voltage monitoring with color-coded display
+- Button state indicators
+- Simultaneous multi-display control
+- Safe power management
+
+**Required Hardware:**
+- GC9A01 round TFT display connected via Whisker expansion port
+
+**Documentation:**
+- `README.md` - Complete feature overview
+- `QUICK_START.md` - 5-minute setup guide
+- `WIRING.txt` - Pin connection details
+
+### 3. Dual-MCU WiFi Integration (Arduino)
+**Directory:** `Dual_MCU_Integration/`
+
+Advanced system that adds WiFi and Bluetooth capabilities using an ESP32-S3 coprocessor connected via the SAO port:
+
+**Features:**
+- **WiFi Access Point** - Connect your phone to "PixelKitty-XXXX" network
+- **Web-based LED Designer** - Draw custom patterns on a 15×7 grid in your browser
+- **QR Code Display** - Shows WiFi credentials on TFT display (press RIGHT button)
+- **Animated Cat** - Pixel art cat walks across TFT after QR timeout
+- **BLE Beacon** - Broadcast custom messages via Bluetooth
+- **I2C Communication** - RP2040 and ESP32-S3 communicate at 100kHz
+
+**Firmware Versions:**
+- **Basic:** `RP2040_Master/` + `ESP32_S3_Slave/` - I2C foundation
+- **Enhanced:** `RP2040_Enhanced/` + `ESP32_S3_Enhanced/` - Full features (QR, cat, web)
+
+**Web Interface:**
+- `Web_Interface/led_matrix.html` - Interactive LED pattern designer
+
+**Required Hardware:**
+- ESP32-S3 development board connected to SAO port (4-pin I2C)
+
+**Comprehensive Documentation:**
+- `README.md` - System architecture overview
+- `GETTING_STARTED.md` - Quick start guide
+- `ENHANCED_FEATURES.md` - QR code and web interface details
+- `LIBRARY_SETUP.md` - Required Arduino libraries
+- `ESP32_S3_SETUP.md` - Board support installation
+- `WIRING.txt` - SAO port connection diagram
+- `INDEX.md` - File organization guide
+- `FUTURE_FEATURES.md` - Planned expansions
+
+## Graphics Libraries
+
+### Seeed_GFX Library
+**Directory:** `Seeed_GFX-master/`
+
+TFT_eSPI-based graphics library with 188+ example sketches for TFT displays:
+- Clock displays, animations, sprites
+- Touch panel support
+- PNG/JPG decoding
+- GUI widgets (buttons, meters, sliders)
+- E-Paper display support
+- DMA acceleration for RP2040
+
+### Seeed Round Display Library
+**Directory:** `Seeed_Arduino_RoundDisplay-main/`
+
+LVGL-based UI library for round TFT displays with hardware test sketches and GIF player support.
+
+## Repository Structure
+
+```
+Framework-2025-McMillan/
+├── HARDWARE/                          # Hardware design files
+│   ├── KiCad/TagTag/                 # KiCad project (schematic, PCB, libraries)
+│   ├── Gerber/                       # Manufacturing files (ready for PCB fab)
+│   └── Documentation/                # PDFs, BOM, 3D models, renders
+├── Badge_LED_TFT_Demo/               # Arduino: LED matrix + TFT display demo
+├── Dual_MCU_Integration/             # Arduino: ESP32-S3 WiFi/BLE expansion
+│   ├── RP2040_Master/                # Basic I2C master firmware
+│   ├── RP2040_Enhanced/              # Enhanced with QR code + animated cat
+│   ├── ESP32_S3_Slave/               # Basic I2C slave with WiFi/BLE
+│   ├── ESP32_S3_Enhanced/            # Enhanced with web server + captive portal
+│   └── Web_Interface/                # Browser-based LED designer
+├── Seeed_GFX-master/                 # TFT graphics library (188+ examples)
+├── Seeed_Arduino_RoundDisplay-main/  # LVGL library for round displays
+├── led_ripple.py                     # MicroPython LED animation example
+└── README.md                         # This file
+```
 
 # Getting started with the hardware.
 
@@ -118,11 +222,25 @@ Because our badge is kitty cat shaped, we named our expansion ports 'Whiskers' M
 These ports are usually non soldered on production badges, however simple 1x5 header sockets can be soldered in place to allow for modules to stack onto the bottom side of the board. 
 
 The following IO is available:
-+5V - For powering LEDs
-+3.3V - For powering other devices
-GND - Very important
-IO#23, 24, and 25 - For connecting to various external devices
-IO#28 (ADC#2) - A special analog input pin that can read voltages, useful for sensors
+- **+5V** - For powering LEDs
+- **+3.3V** - For powering other devices
+- **GND** - Very important
+- **IO#23, 24, and 25** - For connecting to various external devices (SPI/I2C capable)
+- **IO#28 (ADC#2)** - A special analog input pin that can read voltages, useful for sensors
+
+### TFT Display Expansion
+
+The Whisker port is ideal for connecting TFT displays via SPI. This repository includes two graphics libraries (`Seeed_GFX-master/` and `Seeed_Arduino_RoundDisplay-main/`) with 188+ example sketches for driving TFT displays.
+
+**Common TFT Pin Mapping (via Whisker Port):**
+- **SPI MOSI:** IO#23 or IO#24
+- **SPI SCK:** IO#24 or IO#25
+- **CS (Chip Select):** Any available GPIO
+- **DC (Data/Command):** Any available GPIO
+- **RST (Reset):** Any available GPIO (or tie to 3.3V rail)
+- **Power:** 3.3V for logic, 5V for backlight (if needed)
+
+See the `Badge_LED_TFT_Demo/` example for a complete implementation using a GC9A01 round display.
 
 The following image shows how these pins are laid out. The schematic and PCB files included in this repository can show how to build a board that connects to this expansion port.
 
