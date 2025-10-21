@@ -17,16 +17,20 @@ https://github.com/mkohler99/FrameworkNYBadge_Tutorials/
 
 This repository includes several ready-to-use firmware examples:
 
-### 1. LED Ripple Animation (MicroPython)
-**File:** `led_ripple.py`
+### 1. LED Ripple Animation
 
-A simple button-triggered rainbow ripple animation that demonstrates:
+Button-triggered rainbow ripple animation that demonstrates:
 - LED matrix addressing and control
 - Button input handling
 - Safe power management (15% brightness limit)
 - HSV to RGB color conversion
+- Idle breathing animation
 
 Press the center "MEOW" button to trigger a rainbow ripple effect emanating from the center of the display.
+
+**Available in two versions:**
+- **Arduino (Recommended)**: `LED_Ripple_Arduino/LED_Ripple_Arduino.ino` - Runs continuously with idle animation
+- **MicroPython**: `led_ripple.py` - Simple script version
 
 ### 2. Badge LED + TFT Demo (Arduino)
 **Directory:** `Badge_LED_TFT_Demo/`
@@ -105,6 +109,7 @@ Framework-2025-McMillan/
 │   ├── KiCad/TagTag/                 # KiCad project (schematic, PCB, libraries)
 │   ├── Gerber/                       # Manufacturing files (ready for PCB fab)
 │   └── Documentation/                # PDFs, BOM, 3D models, renders
+├── LED_Ripple_Arduino/               # Arduino: Rainbow ripple animation (recommended)
 ├── Badge_LED_TFT_Demo/               # Arduino: LED matrix + TFT display demo
 ├── Dual_MCU_Integration/             # Arduino: ESP32-S3 WiFi/BLE expansion
 │   ├── RP2040_Master/                # Basic I2C master firmware
