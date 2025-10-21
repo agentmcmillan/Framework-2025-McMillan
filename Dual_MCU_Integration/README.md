@@ -2,6 +2,10 @@
 
 Integration of Seeed XIAO ESP32-S3 via SAO port to add WiFi/Bluetooth capabilities to the RP2040-based Framework Badge.
 
+<img width="617" height="845" alt="image" src="https://github.com/user-attachments/assets/d501fa13-9304-41f4-819b-10ed1fb17859" />
+
+
+
 ## System Architecture
 
 ```
