@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>🐱 Pixel Kitty - LED Matrix Designer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #fff;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            font-size: 28px;
+            background: linear-gradient(90deg, #00f5ff, #ff00ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 5px;
+        }
+
+        .subtitle {
+            color: #888;
+            font-size: 14px;
+        }
+
+        .container {
+            max-width: 500px;
+            width: 100%;
+        }
+
+        .led-grid {
+            display: grid;
+            grid-template-columns: repeat(15, 1fr);
+            grid-template-rows: repeat(7, 1fr);
+            gap: 3px;
+            background: #0a0a0a;
+            padding: 10px;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0, 245, 255, 0.2);
+            margin-bottom: 20px;
+            aspect-ratio: 15/7;
+        }
+
+        .led-pixel {
+            aspect-ratio: 1/1;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.1s ease;
+            border: 1px solid #222;
+            background: #1a1a1a;
+        }
+
+        .led-pixel:active {
+            transform: scale(0.9);
+        }
+
+        .led-pixel.lit {
+            box-shadow: 0 0 10px currentColor;
+        }
+
+        .controls {
+            background: #222;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        .control-group:last-child {
+            margin-bottom: 0;
+        }
+
+        label {
+            display: block;
+            font-size: 12px;
+            color: #aaa;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .color-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .color-btn {
+            width: 50px;
+            height: 50px;
+            border-radius: 8px;
+            border: 3px solid transparent;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .color-btn:active {
+            transform: scale(0.95);
+        }
+
+        .color-btn.active {
+            border-color: #fff;
+            box-shadow: 0 0 20px currentColor;
+        }
+
+        .color-btn.active::after {
+            content: '✓';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-size: 24px;
+            text-shadow: 0 0 3px #000;
+        }
+
+        .action-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        button {
+            padding: 15px;
+            font-size: 16px;
+            font-weight: bold;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        .btn-send {
+            background: linear-gradient(135deg, #00f5ff, #0099ff);
+            color: #000;
+            grid-column: span 2;
+        }
+
+        .btn-clear {
+            background: #ff4444;
+            color: #fff;
+        }
+
+        .btn-rainbow {
+            background: linear-gradient(90deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3);
+            color: #fff;
+        }
+
+        .status {
+            background: #1a1a1a;
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 14px;
+            margin-top: 15px;
+        }
+
+        .status.success {
+            background: #00ff00;
+            color: #000;
+        }
+
+        .status.error {
+            background: #ff4444;
+            color: #fff;
+        }
+
+        .footer {
+            margin-top: 20px;
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+        }
+
+        /* Drawing mode toggle */
+        .draw-mode {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .mode-btn {
+            flex: 1;
+            padding: 10px;
+            background: #333;
+            color: #aaa;
+        }
+
+        .mode-btn.active {
+            background: linear-gradient(135deg, #00f5ff, #0099ff);
+            color: #000;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🐱 PIXEL KITTY</h1>
+        <p class="subtitle">LED Matrix Designer</p>
+    </header>
+
+    <div class="container">
+        <!-- LED Matrix Grid (15x7) -->
+        <div class="led-grid" id="ledGrid"></div>
+
+        <!-- Controls -->
+        <div class="controls">
+            <div class="control-group">
+                <label>Drawing Mode</label>
+                <div class="draw-mode">
+                    <button class="mode-btn active" data-mode="draw">Draw</button>
+                    <button class="mode-btn" data-mode="erase">Erase</button>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>Color Selection</label>
+                <div class="color-buttons" id="colorButtons">
+                    <!-- Colors will be added by JavaScript -->
+                </div>
+            </div>
+
+            <div class="control-group">
+                <div class="action-buttons">
+                    <button class="btn-send" id="btnSend">📡 Send to Badge</button>
+                    <button class="btn-clear" id="btnClear">🗑 Clear</button>
+                    <button class="btn-rainbow" id="btnRainbow">🌈 Rainbow</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="status" id="status">Draw your design and click "Send to Badge"</div>
+
+        <div class="footer">
+            Badge IP: <span id="badgeIP">loading...</span><br>
+            Connected to: Framework Badge
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const COLS = 15;
+        const ROWS = 7;
+        const BADGE_API = '/api/led'; // ESP32 endpoint
+
+        // Color palette
+        const colors = [
+            { name: 'Red', hex: '#ff0000' },
+            { name: 'Orange', hex: '#ff7f00' },
+            { name: 'Yellow', hex: '#ffff00' },
+            { name: 'Green', hex: '#00ff00' },
+            { name: 'Cyan', hex: '#00ffff' },
+            { name: 'Blue', hex: '#0000ff' },
+            { name: 'Purple', hex: '#ff00ff' },
+            { name: 'White', hex: '#ffffff' },
+            { name: 'Off', hex: '#000000' }
+        ];
+
+        // State
+        let ledMatrix = Array(ROWS).fill(null).map(() => Array(COLS).fill('#000000'));
+        let currentColor = colors[0].hex;
+        let drawMode = 'draw';
+        let isDrawing = false;
+
+        // Initialize grid
+        function initGrid() {
+            const grid = document.getElementById('ledGrid');
+
+            for (let y = 0; y < ROWS; y++) {
+                for (let x = 0; x < COLS; x++) {
+                    const pixel = document.createElement('div');
+                    pixel.className = 'led-pixel';
+                    pixel.dataset.x = x;
+                    pixel.dataset.y = y;
+
+                    // Mouse events
+                    pixel.addEventListener('mousedown', () => {
+                        isDrawing = true;
+                        setPixel(x, y);
+                    });
+                    pixel.addEventListener('mouseenter', () => {
+                        if (isDrawing) setPixel(x, y);
+                    });
+                    pixel.addEventListener('touchstart', (e) => {
+                        e.preventDefault();
+                        isDrawing = true;
+                        setPixel(x, y);
+                    });
+                    pixel.addEventListener('touchmove', (e) => {
+                        e.preventDefault();
+                        const touch = e.touches[0];
+                        const element = document.elementFromPoint(touch.clientX, touch.clientY);
+                        if (element && element.classList.contains('led-pixel')) {
+                            const tx = parseInt(element.dataset.x);
+                            const ty = parseInt(element.dataset.y);
+                            setPixel(tx, ty);
+                        }
+                    });
+
+                    grid.appendChild(pixel);
+                }
+            }
+
+            // Stop drawing on mouse up
+            document.addEventListener('mouseup', () => isDrawing = false);
+            document.addEventListener('touchend', () => isDrawing = false);
+        }
+
+        // Initialize color buttons
+        function initColorButtons() {
+            const container = document.getElementById('colorButtons');
+
+            colors.forEach((color, index) => {
+                const btn = document.createElement('div');
+                btn.className = 'color-btn';
+                btn.style.backgroundColor = color.hex;
+                btn.title = color.name;
+                if (index === 0) btn.classList.add('active');
+
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    currentColor = color.hex;
+                });
+
+                container.appendChild(btn);
+            });
+        }
+
+        // Set pixel color
+        function setPixel(x, y) {
+            const color = drawMode === 'draw' ? currentColor : '#000000';
+            ledMatrix[y][x] = color;
+            updatePixelDisplay(x, y);
+        }
+
+        // Update pixel display
+        function updatePixelDisplay(x, y) {
+            const pixels = document.querySelectorAll('.led-pixel');
+            const index = y * COLS + x;
+            const pixel = pixels[index];
+            const color = ledMatrix[y][x];
+
+            pixel.style.backgroundColor = color;
+            if (color !== '#000000') {
+                pixel.style.color = color;
+                pixel.classList.add('lit');
+            } else {
+                pixel.classList.remove('lit');
+            }
+        }
+
+        // Clear grid
+        function clearGrid() {
+            ledMatrix = Array(ROWS).fill(null).map(() => Array(COLS).fill('#000000'));
+            for (let y = 0; y < ROWS; y++) {
+                for (let x = 0; x < COLS; x++) {
+                    updatePixelDisplay(x, y);
+                }
+            }
+        }
+
+        // Rainbow pattern
+        function rainbowPattern() {
+            const rainbowColors = ['#ff0000', '#ff7f00', '#ffff00', '#00ff00', '#0000ff', '#4b0082', '#9400d3'];
+
+            for (let x = 0; x < COLS; x++) {
+                const colorIndex = Math.floor((x / COLS) * rainbowColors.length);
+                for (let y = 0; y < ROWS; y++) {
+                    ledMatrix[y][x] = rainbowColors[colorIndex];
+                    updatePixelDisplay(x, y);
+                }
+            }
+        }
+
+        // Send to badge
+        async function sendToBadge() {
+            const status = document.getElementById('status');
+            status.textContent = 'Sending to badge...';
+            status.className = 'status';
+
+            try {
+                // Convert matrix to RGB values (column-major order to match badge)
+                const data = [];
+                for (let x = 0; x < COLS; x++) {
+                    for (let y = 0; y < ROWS; y++) {
+                        const color = ledMatrix[y][x];
+                        const r = parseInt(color.substr(1, 2), 16);
+                        const g = parseInt(color.substr(3, 2), 16);
+                        const b = parseInt(color.substr(5, 2), 16);
+                        data.push(r, g, b);
+                    }
+                }
+
+                const response = await fetch(BADGE_API, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ leds: data })
+                });
+
+                if (response.ok) {
+                    status.textContent = '✓ Sent successfully!';
+                    status.className = 'status success';
+                } else {
+                    throw new Error('Failed to send');
+                }
+            } catch (error) {
+                status.textContent = '✗ Error: ' + error.message;
+                status.className = 'status error';
+            }
+
+            setTimeout(() => {
+                status.textContent = 'Draw your design and click "Send to Badge"';
+                status.className = 'status';
+            }, 3000);
+        }
+
+        // Mode buttons
+        document.querySelectorAll('.mode-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                drawMode = btn.dataset.mode;
+            });
+        });
+
+        // Action buttons
+        document.getElementById('btnSend').addEventListener('click', sendToBadge);
+        document.getElementById('btnClear').addEventListener('click', clearGrid);
+        document.getElementById('btnRainbow').addEventListener('click', rainbowPattern);
+
+        // Get badge IP
+        document.getElementById('badgeIP').textContent = window.location.hostname;
+
+        // Initialize
+        initGrid();
+        initColorButtons();
+    </script>
+</body>
+</html>

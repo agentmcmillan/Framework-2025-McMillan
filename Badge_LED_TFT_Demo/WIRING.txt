@@ -1,0 +1,177 @@
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Framework Badge + GC9A01 Round Display Wiring Diagram                     │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+WHISKER PORT (1x5 Header on bottom of badge)
+┌────────────────────────────────────────────┐
+│                                            │
+│  Pin 1: +5V      ─────────┐                │
+│  Pin 2: +3.3V    ───┐     │                │
+│  Pin 3: GND      ─┐ │     │                │
+│  Pin 4: IO#23    ─│─│─────│──┐             │
+│  Pin 5: IO#24    ─│─│─────│──│─┐           │
+│                   │ │     │  │ │           │
+└────────────────┬──│─│─────│──│─│───────────┘
+                 │  │ │     │  │ │
+                 │  │ │     │  │ │
+         ┌───────┼──┼─┼─────┼──┼─┼─────────────────┐
+         │       │  │ │     │  │ │    GC9A01       │
+         │       │  │ │     │  │ │   Round TFT     │
+         │       │  │ │     │  │ │  (240x240)      │
+         │       │  │ │     │  │ │                 │
+         │  GND ─┘  │ │     │  │ │                 │
+         │  VCC ────┘ └─────┘  │ │  (Choose 3.3V   │
+         │  LED+ ───────────────┘ │   or 5V based   │
+         │  MOSI/SDA ──────────────┘   on display)  │
+         │  SCK/SCL ────────────────┐                │
+         │                          │                │
+         └──────────────────────────┼────────────────┘
+                                    │
+                                    └─ Connected to IO#24
+
+
+ADDITIONAL GPIO CONNECTIONS (solder wires to RP2040 pads or nearby test points)
+┌────────────────────────────────────────────┐
+│  Framework Badge RP2040                    │
+│                                            │
+│  IO#25  ──────────────────────────────────┼──► CS  (Chip Select)
+│  IO#20  ──────────────────────────────────┼──► DC  (Data/Command)
+│  IO#21  ──────────────────────────────────┼──► RST (Reset)
+│                                            │
+└────────────────────────────────────────────┘
+                                             │
+                                             ▼
+                                      ┌──────────────┐
+                                      │   GC9A01     │
+                                      │  Round TFT   │
+                                      └──────────────┘
+
+
+COMPLETE PIN MAPPING
+═══════════════════════════════════════════════════════════════
+
+Framework Badge          GC9A01 Display          Notes
+─────────────────        ──────────────          ─────────────────
+Whisker Pin 1 (+5V)  →   VCC or LED+             If 5V tolerant
+Whisker Pin 2 (+3.3V)→   VCC                     If 3.3V only
+Whisker Pin 3 (GND)  →   GND                     Ground
+Whisker Pin 4 (IO#23)→   MOSI/SDA                SPI Data
+Whisker Pin 5 (IO#24)→   SCK/SCL                 SPI Clock
+
+IO#25                →   CS                      Chip Select
+IO#20                →   DC                      Data/Command
+IO#21                →   RST                     Reset (or tie to 3.3V via 10kΩ)
+
+Optional:
+IO#22                →   BL                      Backlight PWM control
+                         (or connect BL to +3.3V/+5V for always-on)
+
+
+EXISTING BADGE CONNECTIONS (DO NOT MODIFY)
+═══════════════════════════════════════════════════════════════
+
+IO#4     → WS2812B LED Matrix (105 LEDs, 15x7)
+IO#5     → Button Left (active low)
+IO#6     → Button Center (active low) - "MEOW" button
+IO#7     → Button Right (active low)
+IO#11    → Status LED (red)
+IO#26    → Battery Voltage Monitor (ADC, 0.357x divider)
+IO#27    → Infrared Receiver (38kHz)
+IO#3     → Infrared Transmitter
+
+
+ALTERNATIVE PIN OPTIONS (if IO#20, 21, 25 unavailable)
+═══════════════════════════════════════════════════════════════
+
+If DVI port is NOT being used, you can use IO#12-19:
+  CS  → Any of IO#12-19
+  DC  → Any of IO#12-19
+  RST → Any of IO#12-19 (or tie to 3.3V)
+
+Whisker Port IO#28 (ADC#2) can also be used for CS/DC/RST
+
+
+POWER CONSUMPTION ESTIMATES
+═══════════════════════════════════════════════════════════════
+
+Component                       Current Draw
+─────────────                  ──────────────
+RP2040 (active)                ~40-60mA
+WS2812B LED Matrix (idle)      ~5-10mA (dim breathing effect)
+WS2812B LED Matrix (ripple)    ~200-400mA (15% brightness, <25% pixels)
+GC9A01 TFT (typical)           ~20-40mA
+GC9A01 TFT (max)               ~100mA (full white, full brightness)
+
+Total Typical:                 ~100-150mA
+Total During Ripple:           ~300-500mA
+Battery Capacity (2x AA):      ~2000-2500mAh
+
+Expected Battery Life:         8-12 hours (typical usage)
+
+
+RECOMMENDED IMPROVEMENTS
+═══════════════════════════════════════════════════════════════
+
+1. Add 470Ω resistor on LED matrix data line (IO#4 → LED DIN)
+2. Add 1000µF capacitor across LED power supply (reduces noise)
+3. Add 10µF capacitor across TFT VCC and GND (stabilizes display)
+4. Add 10kΩ pull-up resistor on TFT RST if not using GPIO control
+5. Use short wires (<10cm) for SPI connections to minimize noise
+
+
+TESTING PROCEDURE
+═══════════════════════════════════════════════════════════════
+
+1. Wire GND first (Whisker Pin 3 → TFT GND)
+2. Connect power (3.3V or 5V depending on your display)
+3. Connect SPI pins (MOSI, SCK)
+4. Connect control pins (CS, DC, RST)
+5. Upload sketch via USB bootloader
+6. Monitor Serial output (115200 baud) for initialization messages
+7. Press CENTER button to test LED matrix
+8. Check TFT for status display
+
+If TFT doesn't work:
+  - Try lower SPI frequency (10MHz instead of 27MHz)
+  - Verify User_Setup.h pin definitions
+  - Check wiring with multimeter
+  - Test with TFT_eSPI example sketches first
+
+
+TROUBLESHOOTING CHECKLIST
+═══════════════════════════════════════════════════════════════
+
+□ Whisker port pins correctly identified (Pin 1 = +5V side)
+□ TFT voltage matches (3.3V or 5V based on display model)
+□ All GND connections secure (badge GND to TFT GND)
+□ SPI pins (MOSI, SCK) not swapped
+□ CS, DC, RST pins match User_Setup.h definitions
+□ User_Setup.h copied to Seeed_GFX library folder
+□ Adafruit_NeoPixel library installed
+□ RP2040 board support installed in Arduino IDE
+□ Badge in bootloader mode for programming (BOOT + RESET)
+□ USB cable supports data transfer (not charge-only)
+□ Serial monitor shows initialization messages
+□ Battery voltage >2.4V (check on TFT display)
+
+
+SAFETY NOTES
+═══════════════════════════════════════════════════════════════
+
+⚠ IMPORTANT: LED matrix power management is critical!
+  - Never exceed 15% brightness with multiple pixels lit
+  - Total current draw must stay under 2,500mA
+  - Monitor battery voltage to prevent over-discharge
+  - Use fresh AA batteries for reliable operation
+
+⚠ Double-check polarity before powering on!
+  - VCC to VCC, GND to GND
+  - Reversed polarity will damage components
+
+⚠ Static electricity precautions:
+  - Touch grounded metal before handling PCB
+  - Work on anti-static mat if available
+  - Avoid working in low-humidity environments
+
+
+For more information, see Badge_LED_TFT_Demo/README.md

@@ -1,0 +1,282 @@
+┌────────────────────────────────────────────────────────────────────────────┐
+│  Framework Badge + XIAO ESP32-S3 Wiring Diagram (SAO Port)                │
+└────────────────────────────────────────────────────────────────────────────┘
+
+SAO PORT CONNECTION (4-pin Standard v0.1)
+═════════════════════════════════════════════════════════════════════════════
+
+┌──────────────────────────────────────┐
+│   Framework Badge (RP2040)           │
+│                                      │
+│   SAO Port (2x2 header on top)      │
+│   ┌───┬───┐                          │
+│   │ 1 │ 2 │  Pin 1: VCC (+3.3V)      │
+│   ├───┼───┤  Pin 2: GND              │
+│   │ 3 │ 4 │  Pin 3: SDA (IO#23/24)   │
+│   └───┴───┘  Pin 4: SCL (IO#24/25)   │
+│        │                             │
+└────────┼─────────────────────────────┘
+         │
+         │ Physical connection
+         │
+┌────────┼─────────────────────────────┐
+│        │    XIAO ESP32-S3            │
+│        ▼                             │
+│   ┌────────┐                         │
+│   │ 5V/3V3 │ ← Pin 1 (VCC)           │
+│   │  GND   │ ← Pin 2 (GND)           │
+│   │  D4/6  │ ← Pin 3 (SDA)           │
+│   │  D5/7  │ ← Pin 4 (SCL)           │
+│   └────────┘                         │
+└──────────────────────────────────────┘
+
+
+DETAILED PIN MAPPING
+═════════════════════════════════════════════════════════════════════════════
+
+Framework Badge RP2040          XIAO ESP32-S3          Wire Color (Suggested)
+─────────────────────────       ─────────────────      ────────────────────
+SAO Pin 1: VCC (+3.3V)      →   5V or 3V3 pin          Red
+SAO Pin 2: GND              →   GND                    Black
+SAO Pin 3: SDA (IO#23)      →   GPIO 6 (D4/SDA)        Green
+SAO Pin 4: SCL (IO#24)      →   GPIO 7 (D5/SCL)        Yellow
+
+
+XIAO ESP32-S3 PINOUT REFERENCE
+═══════════════════════════════════════════════════════════════════════════
+
+      ┌─────────────────────────┐
+      │   XIAO ESP32-S3         │
+      │                         │
+ 5V ──┤ 5V                  BAT ├── VBAT
+3V3 ──┤ 3V3                  D0 ├── GPIO1
+GND ──┤ GND                  D1 ├── GPIO2
+ D0 ──┤ GPIO1                D2 ├── GPIO3
+ D1 ──┤ GPIO2                D3 ├── GPIO4
+ D2 ──┤ GPIO3                D4 ├── GPIO6  ← SDA (I2C)
+ D3 ──┤ GPIO4                D5 ├── GPIO7  ← SCL (I2C)
+ D4 ──┤ GPIO6 (SDA)          D6 ├── GPIO21
+ D5 ──┤ GPIO7 (SCL)          D7 ├── GPIO44
+ D6 ──┤ GPIO21               D8 ├── GPIO43
+ D7 ──┤ GPIO44               D9 ├── GPIO42
+ D8 ──┤ GPIO43              D10 ├── GPIO41
+ D9 ──┤ GPIO42               NC ├
+D10 ──┤ GPIO41               NC ├
+      │                         │
+      └─────────────────────────┘
+
+
+I2C CONFIGURATION
+═════════════════════════════════════════════════════════════════════════════
+
+RP2040 (Master):
+  - SDA: GPIO 23 (or 24, configurable in firmware)
+  - SCL: GPIO 24 (or 25, configurable in firmware)
+  - Clock: 100kHz (standard I2C)
+  - Pull-ups: 4.7kΩ on both SDA and SCL (may be internal)
+
+ESP32-S3 (Slave):
+  - SDA: GPIO 6 (D4, hardware I2C)
+  - SCL: GPIO 7 (D5, hardware I2C)
+  - Address: 0x42
+  - Pull-ups: Internal (can add external 4.7kΩ if needed)
+
+
+SAO PORT PHYSICAL LAYOUT
+═════════════════════════════════════════════════════════════════════════════
+
+Top view of Framework Badge (looking down at SAO port):
+
+                    ┌─────────┐
+                    │  Badge  │
+                    │  Front  │
+                    │         │
+              ┌─────┴─────────┴─────┐
+              │                     │
+              │     LED Matrix      │
+              │                     │
+              └─────────────────────┘
+                         │
+                    SAO Port ▼
+                    ┌───┬───┐
+                    │ 1 │ 2 │  (1=VCC, 2=GND)
+                    ├───┼───┤
+                    │ 3 │ 4 │  (3=SDA, 4=SCL)
+                    └───┴───┘
+
+Note: SAO port reuses Whisker header pins in 2x2 arrangement on TOP side
+      Whisker ports are 1x5 headers on BOTTOM side
+
+
+ASSEMBLY INSTRUCTIONS
+═══════════════════════════════════════════════════════════════════════════
+
+Option 1: Direct Socket Connection
+───────────────────────────────────────────────────────────────────────────
+1. Solder 2x2 female header socket to SAO port location on badge (top side)
+2. Solder 2x2 male header pins to XIAO ESP32-S3
+3. Align XIAO pins with SAO socket (verify Pin 1 = VCC!)
+4. Press XIAO onto socket
+5. Secure with hot glue or 3D-printed bracket (optional)
+
+Option 2: Wired Connection
+───────────────────────────────────────────────────────────────────────────
+1. Solder 2x2 header to SAO port on badge
+2. Use 4 jumper wires (10-15cm) to connect:
+     Badge SAO Pin 1 → XIAO 3V3
+     Badge SAO Pin 2 → XIAO GND
+     Badge SAO Pin 3 → XIAO D4/GPIO6
+     Badge SAO Pin 4 → XIAO D5/GPIO7
+3. Mount XIAO separately (velcro, 3D printed case, etc.)
+
+Option 3: Custom PCB
+───────────────────────────────────────────────────────────────────────────
+1. Design small PCB with:
+     - 2x2 male header for SAO port
+     - XIAO ESP32-S3 socket or pads
+     - Optional: LED indicator, button, voltage regulator
+2. Route traces: Pin 1→3V3, Pin 2→GND, Pin 3→D4, Pin 4→D5
+3. Fabricate and assemble
+
+
+POWER CONSIDERATIONS
+═════════════════════════════════════════════════════════════════════════════
+
+Current Draw:
+  - RP2040 (badge): 40-100mA
+  - LED Matrix: 50-400mA (depends on brightness/pattern)
+  - ESP32-S3 (WiFi off): 20-40mA
+  - ESP32-S3 (WiFi active): 80-200mA
+  - ESP32-S3 (deep sleep): 10-150µA
+
+Total System Current:
+  - Minimum (sleep): ~100mA
+  - Typical (BLE only): ~200mA
+  - Maximum (WiFi + LEDs): ~700mA
+
+Battery Life (2x AA = 2500mAh):
+  - Sleep mode: 25+ hours
+  - Typical use: 8-12 hours
+  - Heavy use (WiFi): 3-5 hours
+
+Recommendations:
+  1. Monitor battery voltage (RP2040 GPIO 26)
+  2. Disable WiFi when battery < 2.4V
+  3. Use ESP32-S3 light sleep when idle
+  4. Reduce LED brightness when battery low
+
+
+TESTING PROCEDURE
+═════════════════════════════════════════════════════════════════════════════
+
+1. Verify Hardware Connections
+   ──────────────────────────────────────────────────────────────────────
+   □ Use multimeter to check continuity
+   □ Verify VCC = 3.3V at XIAO (measure at 3V3 pin)
+   □ Verify GND connection (0Ω resistance badge GND to XIAO GND)
+   □ Check SDA/SCL connections (should be high-Z or 3.3V with pull-ups)
+
+2. Upload Firmware
+   ──────────────────────────────────────────────────────────────────────
+   □ Upload ESP32_S3_Slave.ino to XIAO ESP32-S3 first
+   □ Open Serial Monitor (115200 baud) - should see "I2C slave initialized"
+   □ Upload RP2040_Master.ino to Framework Badge
+   □ Open Serial Monitor - should see "ESP32-S3 connected!"
+
+3. Test I2C Communication
+   ──────────────────────────────────────────────────────────────────────
+   On RP2040 Serial Monitor, send:
+   □ 'p' - Ping ESP32-S3 (should respond "Connected")
+   □ 's' - Get status (should show WiFi/BLE status)
+
+4. Test WiFi
+   ──────────────────────────────────────────────────────────────────────
+   □ Press LEFT button on badge → WiFi scan
+   □ Check ESP32-S3 serial monitor for network list
+   □ Modify firmware to add your WiFi credentials (for auto-connect)
+
+5. Test BLE
+   ──────────────────────────────────────────────────────────────────────
+   □ Press CENTER button on badge → Rainbow ripple + BLE beacon
+   □ Use phone app (nRF Connect, BLE Scanner) to detect beacon
+   □ Should see "MEOW" or custom beacon name
+
+6. Test Web Server (if WiFi connected)
+   ──────────────────────────────────────────────────────────────────────
+   □ Send WiFi connect command with credentials
+   □ Wait for connection (~5-10 seconds)
+   □ Get ESP32-S3 IP address from serial monitor
+   □ Open browser to http://[IP_ADDRESS]
+   □ Should see "Framework Badge Control" page
+
+
+TROUBLESHOOTING
+═════════════════════════════════════════════════════════════════════════════
+
+Issue: ESP32-S3 not responding to I2C
+────────────────────────────────────────────────────────────────────────────
+□ Check wiring (especially GND and power)
+□ Verify I2C address matches (0x42 in both firmwares)
+□ Try adding external 4.7kΩ pull-ups on SDA and SCL
+□ Reduce I2C clock speed to 50kHz or 10kHz
+□ Check for I2C address conflicts (use I2C scanner sketch)
+
+Issue: ESP32-S3 keeps resetting
+────────────────────────────────────────────────────────────────────────────
+□ Add 10µF capacitor across 3.3V and GND near XIAO
+□ Check if badge can supply enough current (measure with multimeter)
+□ Disable WiFi/BLE temporarily to reduce current draw
+□ Consider adding external 3.3V regulator
+
+Issue: WiFi won't connect
+────────────────────────────────────────────────────────────────────────────
+□ Verify 2.4GHz network (ESP32 doesn't support 5GHz)
+□ Check SSID and password in firmware
+□ Move badge closer to router
+□ Check router allows new client connections
+□ Disable battery-saver modes that might brown-out ESP32
+
+Issue: BLE beacon not visible
+────────────────────────────────────────────────────────────────────────────
+□ Check ESP32-S3 serial monitor for BLE start message
+□ Ensure phone Bluetooth is enabled
+□ Use dedicated BLE scanner app (nRF Connect recommended)
+□ Check antenna orientation (XIAO has PCB antenna)
+□ Verify no BLE address conflicts
+
+Issue: Battery drains too fast
+────────────────────────────────────────────────────────────────────────────
+□ Reduce LED brightness (MAX_LED_BRIGHTNESS in firmware)
+□ Disable WiFi when not needed
+□ Use ESP32-S3 light sleep mode
+□ Check for battery voltage and auto-disable features when low
+
+
+SAFETY WARNINGS
+═════════════════════════════════════════════════════════════════════════════
+
+⚠ IMPORTANT:
+  1. Verify VCC is 3.3V before connecting XIAO (NOT 5V!)
+  2. Check polarity (Pin 1 = VCC, Pin 2 = GND)
+  3. Don't reverse power connections - will damage ESP32-S3
+  4. Use fresh AA batteries (old batteries may not supply enough current)
+  5. Monitor battery voltage to prevent over-discharge
+  6. Don't exceed 700mA total current draw
+  7. Add capacitor across XIAO power pins for stability
+
+
+ADDITIONAL RESOURCES
+═════════════════════════════════════════════════════════════════════════════
+
+XIAO ESP32-S3:
+  - Wiki: https://wiki.seeedstudio.com/xiao_esp32s3_getting_started/
+  - Pinout: https://files.seeedstudio.com/wiki/SeeedStudio-XIAO-ESP32S3/img/2.jpg
+  - Schematic: https://files.seeedstudio.com/wiki/SeeedStudio-XIAO-ESP32S3/res/XIAO_ESP32S3_SCH_v1.1.pdf
+
+SAO Standard:
+  - Specification: https://hackaday.io/project/52950-shitty-add-ons
+  - Examples: https://hackaday.io/list/163858-simple-add-ons-and-shitty-add-ons
+
+I2C Protocol:
+  - Tutorial: https://learn.sparkfun.com/tutorials/i2c
+  - Arduino Wire Library: https://www.arduino.cc/en/Reference/Wire
