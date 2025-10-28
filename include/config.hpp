@@ -2,6 +2,25 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
+// ---- Pins (adjust to your board) ----
+#define PIXEL_PIN       4
+#define IR_RX_PIN       27
+#define MEOW            23
+#define PURR            24
+
+#define BTN1 5
+#define BTN2 6
+#define BTN3 7
+
+#define WIDTH  15
+#define HEIGHT 7
+#define NUM_LEDS (WIDTH*HEIGHT)
+#define COLOR_ORDER GRB
+#define CHIPSET WS2812
+
+static int16_t nsX = WIDTH;   // scroller X
+
+
 struct BadgeConfig {
   String   name;           // display name
   uint16_t id;             // 0..1023
@@ -17,3 +36,5 @@ bool saveConfig(const BadgeConfig &in);
 
 bool loadHits(JsonDocument &doc);      // map "attackerId" -> count
 bool saveHits(const JsonDocument &doc);
+
+
