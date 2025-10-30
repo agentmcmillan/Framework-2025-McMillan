@@ -1,21 +1,23 @@
 /*
- * XIAO ESP32-S3 - I2C Slave Coprocessor Firmware
+ * XIAO ESP32-C6 - I2C Slave Coprocessor Firmware
  *
  * Provides WiFi and Bluetooth services to Framework Badge (RP2040) via I2C.
  * Acts as I2C slave, responding to commands from RP2040 master.
  *
  * Hardware:
- * - Seeed XIAO ESP32-S3
+ * - Seeed XIAO ESP32-C6
  * - Connected to Framework Badge via SAO port (4-pin)
  * - I2C: SDA=GPIO6 (D4), SCL=GPIO7 (D5)
  * - Power: 3.3V from badge
  *
  * Features:
- * - WiFi client/AP mode
- * - BLE beacon broadcasting
+ * - WiFi 6 (802.11ax) client/AP mode
+ * - BLE 5.3 beacon broadcasting
  * - Web server for badge control
  * - HTTP client for cloud integration
  * - Battery level reporting
+ *
+ * Note: ESP32-C6 uses RISC-V architecture (vs Xtensa on S3)
  */
 
 #include <Wire.h>
@@ -30,8 +32,8 @@
 // I2C CONFIGURATION
 // ============================================================================
 
-#define I2C_SDA         6      // GPIO 6 (D4 on XIAO ESP32-S3)
-#define I2C_SCL         7      // GPIO 7 (D5 on XIAO ESP32-S3)
+#define I2C_SDA         6      // GPIO 6 (D4 on XIAO ESP32-C6)
+#define I2C_SCL         7      // GPIO 7 (D5 on XIAO ESP32-C6)
 #define I2C_SLAVE_ADDR  0x42   // I2C slave address (must match RP2040)
 
 // Command codes (must match RP2040 firmware)
@@ -99,8 +101,8 @@ float batteryVoltage = 0.0;
 void setup() {
   Serial.begin(115200);
   delay(1000);
-  Serial.println("\n\n=== XIAO ESP32-S3 I2C Slave ===");
-  Serial.println("WiFi/BLE Coprocessor for Framework Badge");
+  Serial.println("\n\n=== XIAO ESP32-C6 I2C Slave ===");
+  Serial.println("WiFi 6 / BLE 5.3 Coprocessor for Framework Badge");
 
   // Initialize status LED
   pinMode(STATUS_LED, OUTPUT);

@@ -1,6 +1,6 @@
-# ESP32-S3 Board Support Installation Guide
+# ESP32-C6 Board Support Installation Guide
 
-Complete setup instructions for XIAO ESP32-S3 development with Arduino IDE.
+Complete setup instructions for XIAO ESP32-C6 development with Arduino IDE.
 
 ## Arduino IDE Installation
 
@@ -34,10 +34,10 @@ Download Arduino IDE 2.x from: https://www.arduino.cc/en/software
 4. Click **Install** (latest version 3.3.2 recommended)
 5. Wait for installation to complete (~5-10 minutes, downloads ~27MB)
 
-#### Step 4: Select XIAO ESP32-S3 Board
+#### Step 4: Select XIAO ESP32-C6 Board
 
 1. Go to **Tools → Board → ESP32 Arduino**
-2. Scroll down and select **XIAO_ESP32S3**
+2. Scroll down and select **XIAO_ESP32C6**
 
 #### Step 5: Configure Board Settings
 
@@ -45,12 +45,13 @@ Download Arduino IDE 2.x from: https://www.arduino.cc/en/software
 - **Tools → USB Mode:** Hardware CDC and JTAG
 - **Tools → Upload Mode:** UART0 / Hardware CDC
 - **Tools → Upload Speed:** 921600
-- **Tools → CPU Frequency:** 240MHz (WiFi)
+- **Tools → CPU Frequency:** 160MHz (WiFi 6 mode)
 - **Tools → Flash Mode:** QIO 80MHz
-- **Tools → Flash Size:** 8MB (Quad SPI)
-- **Tools → Partition Scheme:** Default 4MB with spiffs
-- **Tools → PSRAM:** OPI PSRAM
+- **Tools → Flash Size:** 4MB (Note: C6 has 4MB vs S3's 8MB)
+- **Tools → Partition Scheme:** Default 4MB with spiffs (1.2MB APP/1.5MB SPIFFS)
 - **Tools → Port:** Select your XIAO's port (COM port on Windows, /dev/ttyACM0 on Linux, /dev/cu.usbmodem* on macOS)
+
+**Note:** ESP32-C6 does NOT have PSRAM (unlike S3). It has 512KB SRAM built-in.
 
 ---
 
@@ -112,7 +113,7 @@ Search and install these from Library Manager:
 
 ---
 
-## Uploading Firmware to XIAO ESP32-S3
+## Uploading Firmware to XIAO ESP32-C6
 
 ### First-Time Upload
 
@@ -192,7 +193,7 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
 
-  Serial.println("WiFi scan starting...");
+  Serial.println("WiFi 6 scan starting...");
   int n = WiFi.scanNetworks();
 
   Serial.print("Networks found: ");
@@ -211,7 +212,7 @@ void setup() {
 void loop() {}
 ```
 
-**Expected result:** List of nearby WiFi networks
+**Expected result:** List of nearby WiFi networks (supports WiFi 6/802.11ax)
 
 ### 4. I2C Scan Test
 
@@ -220,7 +221,7 @@ void loop() {}
 
 void setup() {
   Serial.begin(115200);
-  Wire.begin(6, 7); // SDA=GPIO6, SCL=GPIO7 on XIAO ESP32-S3
+  Wire.begin(6, 7); // SDA=GPIO6, SCL=GPIO7 on XIAO ESP32-C6
 
   Serial.println("I2C Scanner");
   byte error, address;
@@ -253,29 +254,29 @@ void loop() {}
 
 ## Uploading the Dual-MCU Firmware
 
-### For ESP32-S3 (I2C Slave)
+### For ESP32-C6 (I2C Slave)
 
-1. Open `ESP32_S3_Slave/ESP32_S3_Slave.ino`
-2. Select board: **Tools → Board → XIAO_ESP32S3**
+1. Open `ESP32_C6_Slave/ESP32_C6_Slave.ino` (or `ESP32_S3_Slave/ESP32_S3_Slave.ino` if not renamed yet)
+2. Select board: **Tools → Board → XIAO_ESP32C6**
 3. Configure settings (see Step 5 in Method 1 above)
-4. Connect XIAO ESP32-S3 via USB
+4. Connect XIAO ESP32-C6 via USB
 5. Enter bootloader mode if needed (BOOT + RESET)
 6. Click **Upload**
 7. Open **Serial Monitor** (115200 baud)
-8. Should see: "XIAO ESP32-S3 I2C Slave - Ready for commands"
+8. Should see: "XIAO ESP32-C6 I2C Slave - Ready for commands"
 
 ### For RP2040 (I2C Master)
 
-1. First, make sure ESP32-S3 firmware is uploaded and running
-2. Disconnect XIAO ESP32-S3 from USB
-3. **Connect** ESP32-S3 to badge SAO port (see WIRING.txt)
+1. First, make sure ESP32-C6 firmware is uploaded and running
+2. Disconnect XIAO ESP32-C6 from USB
+3. **Connect** ESP32-C6 to badge SAO port (see WIRING.txt)
 4. Connect Framework Badge to computer via USB
 5. Enter RP2040 bootloader mode (BOOT + RESET on badge)
 6. Select board: **Tools → Board → Raspberry Pi Pico**
 7. Open `RP2040_Master/RP2040_Master.ino`
 8. Click **Upload**
 9. Open **Serial Monitor** (115200 baud)
-10. Should see: "ESP32-S3 connected!"
+10. Should see: "ESP32-C6 connected!"
 
 ---
 
@@ -284,7 +285,7 @@ void loop() {}
 ### "Board not found" or Port not appearing
 
 **Windows:**
-- Install CH340 USB driver: https://wiki.seeedstudio.com/XIAO_ESP32S3_Getting_Started/#driver-installation
+- Install CH340 USB driver: https://wiki.seeedstudio.com/XIAO_ESP32C6_Getting_Started/#driver-installation
 - Try different USB cable (must support data, not charge-only)
 
 **macOS:**
@@ -311,15 +312,17 @@ void loop() {}
 ### WiFi doesn't work
 
 1. Check antenna connection (built-in PCB antenna on XIAO)
-2. Ensure 2.4GHz network (ESP32 doesn't support 5GHz)
+2. ESP32-C6 supports **both 2.4GHz and WiFi 6** (but still no 5GHz band)
 3. Try closer to router
 4. Check if board supports WiFi (some clones don't have WiFi chip)
+5. WiFi 6 features work best with WiFi 6-enabled routers
 
 ### BLE doesn't work
 
 1. Make sure WiFi is initialized first (ESP32 shares radio)
-2. Check **Tools → PSRAM** is set to **OPI PSRAM**
-3. Try BLE example from **File → Examples → ESP32 BLE Arduino**
+2. ESP32-C6 supports **BLE 5.3** with improved range and speed
+3. **Note:** ESP32-C6 has NO PSRAM (unlike S3), so skip PSRAM settings
+4. Try BLE example from **File → Examples → ESP32 BLE Arduino**
 
 ### I2C communication fails with RP2040
 
@@ -334,13 +337,14 @@ void loop() {}
 
 ### Official Documentation
 
-- **XIAO ESP32-S3 Wiki:** https://wiki.seeedstudio.com/xiao_esp32s3_getting_started/
+- **XIAO ESP32-C6 Wiki:** https://wiki.seeedstudio.com/xiao_esp32c6_getting_started/
+- **ESP32-C6 Datasheet:** https://www.espressif.com/sites/default/files/documentation/esp32-c6_datasheet_en.pdf
 - **ESP32 Arduino Core:** https://github.com/espressif/arduino-esp32
 - **ESP32 API Reference:** https://docs.espressif.com/projects/arduino-esp32/en/latest/
 
 ### Example Code
 
-- **XIAO ESP32-S3 Examples:** https://github.com/Seeed-Studio/Seeed_Arduino_ESP32S3
+- **XIAO ESP32-C6 Examples:** https://github.com/Seeed-Studio/Seeed_Arduino_XIAO_ESP32C6
 - **ESP32 WiFi Examples:** File → Examples → WiFi (in Arduino IDE)
 - **ESP32 BLE Examples:** File → Examples → ESP32 BLE Arduino
 
@@ -360,20 +364,27 @@ void loop() {}
 
 ## Quick Reference
 
-### Board Settings (XIAO ESP32-S3)
+### Board Settings (XIAO ESP32-C6)
 
 | Setting | Value |
 |---------|-------|
-| Board | XIAO_ESP32S3 |
+| Board | XIAO_ESP32C6 |
 | USB CDC On Boot | Enabled |
 | USB Mode | Hardware CDC and JTAG |
 | Upload Speed | 921600 |
-| CPU Frequency | 240MHz (WiFi) |
-| Flash Size | 8MB (Quad SPI) |
+| CPU Frequency | 160MHz (WiFi 6) |
+| Flash Size | 4MB (Quad SPI) |
 | Partition | Default 4MB with spiffs |
-| PSRAM | OPI PSRAM |
+| Architecture | RISC-V (32-bit) |
+| PSRAM | None (512KB SRAM built-in) |
 
-### Pin Reference (XIAO ESP32-S3)
+### Key ESP32-C6 Advantages
+- **WiFi 6 (802.11ax)** - Better performance in crowded networks
+- **BLE 5.3** - Longer range, faster speeds
+- **Lower power consumption** - Better for battery operation
+- **RISC-V architecture** - Open-source instruction set
+
+### Pin Reference (XIAO ESP32-C6)
 
 | Pin Label | GPIO | Function | Used For |
 |-----------|------|----------|----------|
@@ -420,7 +431,7 @@ After successful installation:
 1. ✓ Test basic blink sketch
 2. ✓ Test WiFi scan
 3. ✓ Test I2C communication
-4. → Upload ESP32_S3_Slave firmware
+4. → Upload ESP32_C6_Slave firmware (or ESP32_S3_Slave with updated code)
 5. → Connect to Framework Badge via SAO port
 6. → Upload RP2040_Master firmware
 7. → Test dual-MCU system

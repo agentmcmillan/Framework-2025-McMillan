@@ -1,19 +1,21 @@
 /*
- * XIAO ESP32-S3 - Enhanced WiFi AP + Web Server
+ * XIAO ESP32-C6 - Enhanced WiFi AP + Web Server
  *
  * Provides WiFi Access Point with web interface for LED matrix drawing.
  * Serves HTML page for designing LED patterns and sends them to RP2040.
  *
  * Hardware:
- * - Seeed XIAO ESP32-S3
+ * - Seeed XIAO ESP32-C6
  * - Connected to Framework Badge via SAO port
  * - I2C: SDA=GPIO6, SCL=GPIO7
  *
  * Features:
- * - WiFi AP mode (SSID: "PixelKitty-XXXX")
+ * - WiFi 6 AP mode (SSID: "PixelKitty-XXXX")
  * - Web server with LED drawing interface
  * - QR code data generation for WiFi connection
  * - I2C communication with RP2040
+ *
+ * Note: ESP32-C6 uses RISC-V architecture, supports WiFi 6 (802.11ax)
  */
 
 #include <Wire.h>
@@ -92,8 +94,8 @@ bool ledDataReady = false;
 void setup() {
   Serial.begin(115200);
   delay(1000);
-  Serial.println("\n\n=== XIAO ESP32-S3 Enhanced ===");
-  Serial.println("WiFi AP + Web Server + LED Control");
+  Serial.println("\n\n=== XIAO ESP32-C6 Enhanced ===");
+  Serial.println("WiFi 6 AP + Web Server + LED Control");
 
   // Generate unique SSID with chip ID
   uint32_t chipId = 0;

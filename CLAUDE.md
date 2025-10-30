@@ -263,16 +263,22 @@ Comprehensive Arduino sketch combining LED matrix with GC9A01 round TFT display.
 - `README.md` - Complete documentation, wiring, troubleshooting
 
 ### 3. Dual_MCU_Integration/ (Advanced) ⭐ NEW
-Complete dual-microcontroller system adding WiFi/Bluetooth via ESP32-S3 coprocessor.
+Complete dual-microcontroller system adding WiFi/Bluetooth via ESP32-C6 coprocessor.
 
 **Location:** `Dual_MCU_Integration/`
 
 **System Architecture:**
 - **RP2040 (Master):** Badge control, LED matrix, TFT display, buttons
-- **ESP32-S3 (Slave):** WiFi AP, web server, BLE beacon, I2C communication
+- **ESP32-C6 (Slave):** WiFi 6 AP, web server, BLE 5.3 beacon, I2C communication
+
+**ESP32-C6 Advantages:**
+- **WiFi 6 (802.11ax)** - Better performance in crowded networks
+- **BLE 5.3** - Longer range, faster speeds vs BLE 5.0
+- **Lower power consumption** - Better battery life
+- **RISC-V architecture** - Open-source instruction set
 
 **Enhanced Features:**
-- **WiFi Access Point:** Connect via phone to "PixelKitty-XXXX" network
+- **WiFi 6 Access Point:** Connect via phone to "PixelKitty-XXXX" network
 - **Web-based LED Designer:** Draw patterns on 15×7 grid in browser
 - **QR Code Display:** RIGHT button shows WiFi QR code on TFT (30 seconds)
 - **Animated Cat:** Pixel art cat walking on TFT after QR timeout
@@ -282,27 +288,28 @@ Complete dual-microcontroller system adding WiFi/Bluetooth via ESP32-S3 coproces
 
 **Basic (I2C Foundation):**
 - `RP2040_Master/RP2040_Master.ino` - I2C master with basic commands
-- `ESP32_S3_Slave/ESP32_S3_Slave.ino` - I2C slave with WiFi/BLE
+- `ESP32_S3_Slave/ESP32_S3_Slave.ino` - I2C slave with WiFi 6/BLE 5.3 (updated for C6)
 
 **Enhanced (Full Features):**
 - `RP2040_Enhanced/RP2040_Enhanced.ino` - QR code + animated cat + web LED
-- `ESP32_S3_Enhanced/ESP32_S3_Enhanced.ino` - WiFi AP + web server + captive portal
+- `ESP32_S3_Enhanced/ESP32_S3_Enhanced.ino` - WiFi 6 AP + web server + captive portal (updated for C6)
 
 **Required Libraries:**
 - RP2040: `Adafruit_NeoPixel`, `Seeed_GFX`, `QRCode` (new)
-- ESP32-S3: `ArduinoJson` (new), WiFi/WebServer/DNSServer (built-in)
+- ESP32-C6: `ArduinoJson` (new), WiFi/WebServer/DNSServer (built-in)
 
 **Key Files:**
 - `README.md` - System architecture and use cases
 - `WIRING.txt` - SAO port connection diagram
-- `ESP32_S3_SETUP.md` - ESP32 board support installation
+- `ESP32_C6_SETUP.md` - ESP32-C6 board support installation
 - `ENHANCED_FEATURES.md` - Complete feature guide (QR code, cat, web)
 - `LIBRARY_SETUP.md` - Step-by-step library installation
 - `Web_Interface/led_matrix.html` - Interactive LED designer webpage
 
 **Connection:**
-- ESP32-S3 connects to badge via SAO port (4-pin: VCC, GND, SDA, SCL)
+- ESP32-C6 connects to badge via SAO port (4-pin: VCC, GND, SDA, SCL)
 - I2C communication at 100kHz
+- I2C pins: SDA=GPIO6 (D4), SCL=GPIO7 (D5) - same as S3
 - Slave address: 0x42
 
 ## Version Control Notes
