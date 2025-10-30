@@ -136,6 +136,33 @@ int blinkDuration = 150;             // Blink lasts 150ms
 uint16_t irisColor = EYE_IRIS_COLOR;
 
 // ============================================================================
+// FUNCTION FORWARD DECLARATIONS
+// ============================================================================
+
+// Display functions
+void initDisplay1();
+void initDisplay2();
+void drawBothEyes();
+void drawEye1();
+void drawEye2();
+void drawEye(int offsetX, int offsetY);
+void drawClosedEye();
+
+// Animation functions
+void updateEyeAnimation();
+void setEyeDirection(EyeDirection dir);
+void blink();
+
+// Web server functions
+void setupWebServer();
+void handleRoot();
+void handleEyeControl();
+void handleColorChange();
+void handleBlinkCommand();
+void handleStatus();
+void handleNotFound();
+
+// ============================================================================
 // SETUP
 // ============================================================================
 

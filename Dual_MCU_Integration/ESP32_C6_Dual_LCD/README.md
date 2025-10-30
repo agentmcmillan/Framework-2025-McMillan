@@ -4,6 +4,23 @@ An animated cat eyes display using two GC9A01 round LCD screens controlled by ES
 
 ![Cat Eyes Animation](https://img.shields.io/badge/Status-Ready-brightgreen) ![Platform](https://img.shields.io/badge/Platform-ESP32--C6-blue) ![Displays](https://img.shields.io/badge/Displays-2×GC9A01-orange)
 
+## 📦 Firmware Versions
+
+This project includes **two firmware versions**:
+
+1. **`ESP32_C6_Dual_LCD_Adafruit.ino`** ⭐ **RECOMMENDED for ESP32-C6**
+   - Uses Arduino_GFX library with full ESP32-C6 support
+   - RISC-V architecture compatible
+   - Will compile and run without issues
+   - **Use this version**
+
+2. **`ESP32_C6_Dual_LCD.ino`** (Reference only)
+   - Uses TFT_eSPI library
+   - **Does not compile on ESP32-C6** due to hardware register incompatibilities
+   - Kept for reference and potential ESP32/ESP32-S3 ports
+
+**Both versions have identical features and web interface - only the display library differs.**
+
 ## ✨ Features
 
 - **Dual Round Displays**: Two 240×240 pixel GC9A01 round LCDs acting as cat eyes
