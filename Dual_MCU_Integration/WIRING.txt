@@ -1,5 +1,6 @@
 ┌────────────────────────────────────────────────────────────────────────────┐
-│  Framework Badge + XIAO ESP32-S3 Wiring Diagram (SAO Port)                │
+│  Framework Badge + ESP32 ProS3 Wiring Diagram (SAO Port/STEMMA QT)        │
+│  Hardware: Unexpected Maker ESP32 ProS3                                   │
 └────────────────────────────────────────────────────────────────────────────┘
 
 SAO PORT CONNECTION (4-pin Standard v0.1)
@@ -20,33 +21,82 @@ SAO PORT CONNECTION (4-pin Standard v0.1)
          │ Physical connection
          │
 ┌────────┼─────────────────────────────┐
-│        │    XIAO ESP32-S3            │
+│        │    ESP32 ProS3              │
 │        ▼                             │
 │   ┌────────┐                         │
-│   │ 5V/3V3 │ ← Pin 1 (VCC)           │
+│   │  3V3   │ ← Pin 1 (VCC)           │
 │   │  GND   │ ← Pin 2 (GND)           │
-│   │  D4/6  │ ← Pin 3 (SDA)           │
-│   │  D5/7  │ ← Pin 4 (SCL)           │
+│   │ GPIO8  │ ← Pin 3 (SDA)           │
+│   │ GPIO9  │ ← Pin 4 (SCL)           │
 │   └────────┘                         │
+│   OR use STEMMA QT connector!       │
 └──────────────────────────────────────┘
 
 
-DETAILED PIN MAPPING
+DETAILED PIN MAPPING - ESP32 ProS3
 ═════════════════════════════════════════════════════════════════════════════
 
-Framework Badge RP2040          XIAO ESP32-S3          Wire Color (Suggested)
+Framework Badge RP2040          ESP32 ProS3            Wire Color (Suggested)
 ─────────────────────────       ─────────────────      ────────────────────
-SAO Pin 1: VCC (+3.3V)      →   5V or 3V3 pin          Red
+SAO Pin 1: VCC (+3.3V)      →   3V3 pin                Red
 SAO Pin 2: GND              →   GND                    Black
-SAO Pin 3: SDA (IO#23)      →   GPIO 6 (D4/SDA)        Green
-SAO Pin 4: SCL (IO#24)      →   GPIO 7 (D5/SCL)        Yellow
+SAO Pin 3: SDA (IO#23)      →   GPIO 8 (SDA)           Green or Blue
+SAO Pin 4: SCL (IO#24)      →   GPIO 9 (SCL)           Yellow
+
+**ProS3 Features:**
+- 16MB Flash (4× more storage than ESP32-C6)
+- 8MB PSRAM (excellent for graphics and buffering)
+- WiFi 802.11b/g/n (2.4GHz)
+- BLE 5.0
+- Xtensa dual-core @ 240MHz
+- Dual 700mA LDOs (ultra-stable power)
+- Built-in battery charging circuit
+- STEMMA QT connector (GPIO8/GPIO9)
+- RGB LED on GPIO48 for status
+- Ultra-low 10µA deep sleep
 
 
-XIAO ESP32-S3 PINOUT REFERENCE
+ESP32 BOARD PINOUT REFERENCES
 ═══════════════════════════════════════════════════════════════════════════
 
+ESP32 ProS3 (Unexpected Maker) - Recommended for this project
+───────────────────────────────────────────────────────────────────────────
+
+      ┌─────────────────────────────────────┐
+      │        ESP32 ProS3                  │
+      │   27 GPIOs, 16MB Flash, 8MB PSRAM   │
+      │                                     │
+      │  [USB-C]  [RGB LED]  [STEMMA QT]    │
+      │                                     │
+ GND ─┤ GND                             5V ├─ 5V
+ 3V3 ─┤ 3V3                            BAT ├─ VBAT
+ IO0 ─┤ GPIO0                         IO17 ├─ GPIO17 (LDO2 EN)
+ IO1 ─┤ GPIO1                         IO18 ├─ GPIO18
+ IO2 ─┤ GPIO2                         IO21 ├─ GPIO21
+ IO3 ─┤ GPIO3                         IO33 ├─ GPIO33
+ IO4 ─┤ GPIO4                         IO34 ├─ GPIO34
+ IO5 ─┤ GPIO5                         IO35 ├─ GPIO35
+ IO6 ─┤ GPIO6                         IO36 ├─ GPIO36
+ IO7 ─┤ GPIO7                         IO37 ├─ GPIO37
+ IO8 ─┤ GPIO8  (SDA) ← STEMMA QT      IO38 ├─ GPIO38
+ IO9 ─┤ GPIO9  (SCL) ← STEMMA QT      IO39 ├─ GPIO39
+IO10 ─┤ GPIO10                        IO40 ├─ GPIO40
+IO11 ─┤ GPIO11                        IO41 ├─ GPIO41
+IO12 ─┤ GPIO12                        IO42 ├─ GPIO42
+IO13 ─┤ GPIO13                        IO43 ├─ GPIO43 (TX)
+IO14 ─┤ GPIO14                        IO44 ├─ GPIO44 (RX)
+      │                                     │
+      └─────────────────────────────────────┘
+
+I2C for SAO Port: GPIO8 (SDA), GPIO9 (SCL)
+Note: STEMMA QT connector already uses these pins!
+
+
+XIAO ESP32-C6 / ESP32-S3 (Seeed Studio)
+───────────────────────────────────────────────────────────────────────────
+
       ┌─────────────────────────┐
-      │   XIAO ESP32-S3         │
+      │   XIAO ESP32-C6/S3      │
       │                         │
  5V ──┤ 5V                  BAT ├── VBAT
 3V3 ──┤ 3V3                  D0 ├── GPIO1
@@ -65,17 +115,26 @@ D10 ──┤ GPIO41               NC ├
       │                         │
       └─────────────────────────┘
 
+I2C for SAO Port: GPIO6 (SDA), GPIO7 (SCL)
+
 
 I2C CONFIGURATION
 ═════════════════════════════════════════════════════════════════════════════
 
-RP2040 (Master):
+RP2040 (Master - Framework Badge):
   - SDA: GPIO 23 (or 24, configurable in firmware)
   - SCL: GPIO 24 (or 25, configurable in firmware)
   - Clock: 100kHz (standard I2C)
   - Pull-ups: 4.7kΩ on both SDA and SCL (may be internal)
 
-ESP32-S3 (Slave):
+ESP32 ProS3 (Slave - Option 1):
+  - SDA: GPIO 8 (hardware I2C, STEMMA QT)
+  - SCL: GPIO 9 (hardware I2C, STEMMA QT)
+  - Address: 0x42
+  - Pull-ups: Internal 45kΩ (external 4.7kΩ recommended for reliability)
+  - Advantage: Can use STEMMA QT connector for plug-and-play connection!
+
+XIAO ESP32-C6 or S3 (Slave - Option 2):
   - SDA: GPIO 6 (D4, hardware I2C)
   - SCL: GPIO 7 (D5, hardware I2C)
   - Address: 0x42
@@ -111,48 +170,84 @@ Note: SAO port reuses Whisker header pins in 2x2 arrangement on TOP side
 ASSEMBLY INSTRUCTIONS
 ═══════════════════════════════════════════════════════════════════════════
 
-Option 1: Direct Socket Connection
+Option 1: ESP32 ProS3 with STEMMA QT Cable (Easiest!)
+───────────────────────────────────────────────────────────────────────────
+1. Solder 4-pin JST SH connector (STEMMA QT compatible) to badge SAO port
+   - Pin 1 (VCC) → Black wire (GND on STEMMA QT standard)
+   - Pin 2 (GND) → Red wire (3.3V on STEMMA QT standard)
+   - Pin 3 (SDA) → Blue wire (SDA)
+   - Pin 4 (SCL) → Yellow wire (SCL)
+
+   **IMPORTANT:** SAO and STEMMA QT have different pinouts! You may need to
+   rewire a STEMMA QT cable or create a custom adapter.
+
+2. Plug STEMMA QT cable into ProS3's onboard STEMMA QT connector
+3. No additional wiring needed!
+
+Alternative for ProS3: Wire directly to GPIO8 (SDA) and GPIO9 (SCL)
+
+Option 2: Direct Socket Connection (XIAO boards)
 ───────────────────────────────────────────────────────────────────────────
 1. Solder 2x2 female header socket to SAO port location on badge (top side)
-2. Solder 2x2 male header pins to XIAO ESP32-S3
+2. Solder 2x2 male header pins to XIAO ESP32-C6/S3
 3. Align XIAO pins with SAO socket (verify Pin 1 = VCC!)
 4. Press XIAO onto socket
 5. Secure with hot glue or 3D-printed bracket (optional)
 
-Option 2: Wired Connection
+Option 3: Wired Connection (Any ESP32 board)
 ───────────────────────────────────────────────────────────────────────────
 1. Solder 2x2 header to SAO port on badge
 2. Use 4 jumper wires (10-15cm) to connect:
+
+   For XIAO ESP32-C6/S3:
      Badge SAO Pin 1 → XIAO 3V3
      Badge SAO Pin 2 → XIAO GND
      Badge SAO Pin 3 → XIAO D4/GPIO6
      Badge SAO Pin 4 → XIAO D5/GPIO7
-3. Mount XIAO separately (velcro, 3D printed case, etc.)
 
-Option 3: Custom PCB
+   For ESP32 ProS3:
+     Badge SAO Pin 1 → ProS3 3V3
+     Badge SAO Pin 2 → ProS3 GND
+     Badge SAO Pin 3 → ProS3 GPIO8 (SDA)
+     Badge SAO Pin 4 → ProS3 GPIO9 (SCL)
+
+3. Mount ESP32 board separately (velcro, 3D printed case, etc.)
+
+Option 4: Custom PCB
 ───────────────────────────────────────────────────────────────────────────
 1. Design small PCB with:
      - 2x2 male header for SAO port
-     - XIAO ESP32-S3 socket or pads
+     - ESP32 board socket or pads
      - Optional: LED indicator, button, voltage regulator
-2. Route traces: Pin 1→3V3, Pin 2→GND, Pin 3→D4, Pin 4→D5
+2. Route traces based on your ESP32 board choice
 3. Fabricate and assemble
 
 
 POWER CONSIDERATIONS
 ═════════════════════════════════════════════════════════════════════════════
 
-Current Draw:
+Current Draw by Component:
   - RP2040 (badge): 40-100mA
   - LED Matrix: 50-400mA (depends on brightness/pattern)
-  - ESP32-S3 (WiFi off): 20-40mA
-  - ESP32-S3 (WiFi active): 80-200mA
-  - ESP32-S3 (deep sleep): 10-150µA
+
+  XIAO ESP32-C6/S3:
+    - WiFi off: 20-40mA
+    - WiFi active: 80-200mA
+    - Deep sleep: 10-150µA
+
+  ESP32 ProS3:
+    - WiFi off: 25-45mA
+    - WiFi active: 90-180mA
+    - Deep sleep: 10µA (ultra-low power mode)
+    - Advantage: Dual LDOs provide better power stability
 
 Total System Current:
   - Minimum (sleep): ~100mA
   - Typical (BLE only): ~200mA
   - Maximum (WiFi + LEDs): ~700mA
+
+  ProS3 Advantage: Second LDO (IO17 controlled) auto-shuts down in deep sleep,
+                   reducing power consumption further
 
 Battery Life (2x AA = 2500mAh):
   - Sleep mode: 25+ hours

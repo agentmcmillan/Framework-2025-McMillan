@@ -1,0 +1,231 @@
+=============================================================================
+DUAL ROUND LCD WIRING GUIDE - ESP32-C6 + 2× GC9A01 Displays
+=============================================================================
+
+This guide shows how to connect TWO GC9A01 round LCD displays (240×240)
+to the XIAO ESP32-C6 for the Cat Eyes animation project.
+
+=============================================================================
+COMPONENT LIST
+=============================================================================
+
+□ 1× Seeed XIAO ESP32-C6
+□ 2× GC9A01 240×240 round LCD displays
+□ Breadboard or custom PCB
+□ Jumper wires (Male-to-Female recommended)
+□ USB-C cable for programming
+□ 5V power supply (optional, can power from USB)
+
+=============================================================================
+PIN ASSIGNMENTS
+=============================================================================
+
+ESP32-C6 Pin  │  Function       │  Display 1 (Left)  │  Display 2 (Right)
+──────────────┼─────────────────┼────────────────────┼───────────────────
+GPIO2 (D0)    │  CS1 (Chip Sel) │  CS                │  -
+GPIO3 (D1)    │  DC1 (Data/Cmd) │  DC                │  -
+GPIO4 (D2)    │  RST1 (Reset)   │  RST               │  -
+GPIO5 (D3)    │  CS2 (Chip Sel) │  -                 │  CS
+GPIO6 (D4)    │  DC2 (Data/Cmd) │  -                 │  DC
+GPIO7 (D5)    │  RST2 (Reset)   │  -                 │  RST
+GPIO20        │  SCK (SPI Clk)  │  SCK               │  SCK (shared)
+GPIO21        │  MOSI (SPI Out) │  MOSI/SDA          │  MOSI/SDA (shared)
+3.3V          │  Power          │  VCC               │  VCC (shared)
+GND           │  Ground         │  GND               │  GND (shared)
+
+=============================================================================
+DETAILED WIRING - DISPLAY 1 (LEFT EYE)
+=============================================================================
+
+GC9A01 Pin    →    XIAO ESP32-C6 Pin
+───────────────────────────────────────
+VCC           →    3.3V (pin labeled 3V3)
+GND           →    GND (any ground pin)
+SCK/SCL       →    GPIO20 (labeled D8 on some boards)
+MOSI/SDA      →    GPIO21 (labeled D9 on some boards)
+CS            →    GPIO2  (labeled D0)
+DC            →    GPIO3  (labeled D1)
+RST           →    GPIO4  (labeled D2)
+BL (backlight)→    3.3V (or use PWM on free GPIO for dimming)
+
+=============================================================================
+DETAILED WIRING - DISPLAY 2 (RIGHT EYE)
+=============================================================================
+
+GC9A01 Pin    →    XIAO ESP32-C6 Pin
+───────────────────────────────────────
+VCC           →    3.3V (shared with Display 1)
+GND           →    GND (shared with Display 1)
+SCK/SCL       →    GPIO20 (shared with Display 1)
+MOSI/SDA      →    GPIO21 (shared with Display 1)
+CS            →    GPIO5  (labeled D3)
+DC            →    GPIO6  (labeled D4)
+RST           →    GPIO7  (labeled D5)
+BL (backlight)→    3.3V (or use PWM on free GPIO for dimming)
+
+=============================================================================
+IMPORTANT NOTES
+=============================================================================
+
+✓ SHARED SPI BUS:
+  - Both displays share SCK (GPIO20) and MOSI (GPIO21)
+  - Each display has its own CS, DC, RST pins
+  - Only one display is active at a time (controlled by CS pin)
+
+✓ POWER REQUIREMENTS:
+  - Each GC9A01 can draw up to 100mA with backlight on
+  - Total: ~200mA for both displays
+  - ESP32-C6: ~80mA during WiFi operation
+  - **Total current: ~300mA max**
+  - USB power (500mA) is sufficient
+  - For battery operation, use 3.7V LiPo with voltage regulator
+
+✓ VOLTAGE LEVELS:
+  - GC9A01 operates at 3.3V (matches ESP32-C6)
+  - Do NOT connect to 5V directly!
+  - If your display board has 5V input, it has onboard regulator
+
+✓ GPIO CONFLICTS:
+  - GPIO6 and GPIO7 are normally I2C (SDA/SCL)
+  - If you need I2C to badge, use different GPIOs:
+    - Alternative I2C: GPIO8 (SDA), GPIO9 (SCL)
+  - Current pinout prioritizes dual displays
+
+=============================================================================
+PHYSICAL LAYOUT SUGGESTION
+=============================================================================
+
+For "Cat Eyes" effect, position displays side-by-side horizontally:
+
+        ┌─────────┐         ┌─────────┐
+        │         │         │         │
+        │  ( ◉ )  │         │  ( ◉ )  │
+        │         │         │         │
+        └─────────┘         └─────────┘
+       Display 1           Display 2
+       (Left Eye)         (Right Eye)
+
+Distance between centers: ~5-8cm for realistic cat face proportions
+
+=============================================================================
+BREADBOARD WIRING DIAGRAM
+=============================================================================
+
+                    ┌─────────────────────┐
+                    │   XIAO ESP32-C6     │
+                    │                     │
+                    │  ○ 5V               │
+                    │  ○ GND ─────────┬───┼────── GND (both displays)
+                    │  ○ 3V3 ─────────┼───┼────── VCC (both displays)
+                    │  ○ D0/G2 ───────│───│────── CS1 (Display 1)
+                    │  ○ D1/G3 ───────│───│────── DC1 (Display 1)
+                    │  ○ D2/G4 ───────│───│────── RST1 (Display 1)
+                    │  ○ D3/G5 ───────│───│────── CS2 (Display 2)
+                    │  ○ D4/G6 ───────│───│────── DC2 (Display 2)
+                    │  ○ D5/G7 ───────│───│────── RST2 (Display 2)
+                    │  ○ D8/G20 ──────┼───┼────── SCK (both displays)
+                    │  ○ D9/G21 ──────┴───┼────── MOSI (both displays)
+                    │                     │
+                    └─────────────────────┘
+
+=============================================================================
+TROUBLESHOOTING
+=============================================================================
+
+❌ Problem: One or both displays don't turn on
+✓ Solution:
+  - Check 3.3V power connection
+  - Verify GND is connected
+  - Ensure USB cable supports data (not charge-only)
+  - Try connecting backlight (BL) pin to 3.3V
+
+❌ Problem: Displays show random colors/garbage
+✓ Solution:
+  - Check SPI connections (SCK, MOSI)
+  - Verify CS pins are correct (GPIO2 and GPIO5)
+  - Ensure displays are GC9A01 compatible
+  - Try lower SPI speed in code
+
+❌ Problem: Only one display works
+✓ Solution:
+  - Swap CS pins in code to test each display
+  - Check DC and RST connections for second display
+  - Verify both displays share same SCK/MOSI
+
+❌ Problem: Displays flicker or lag
+✓ Solution:
+  - Reduce animation frame rate (increase delay)
+  - Check power supply can provide enough current
+  - Try adding 100μF capacitor between VCC and GND
+
+❌ Problem: Cat eyes don't look natural
+✓ Solution:
+  - Adjust pupil offset in code (MAX_PUPIL_OFFSET_X/Y)
+  - Mirror left/right eye movements (already done in code)
+  - Tweak animation speed (ease-out factor in updateEyeAnimation)
+
+=============================================================================
+ADVANCED: CUSTOM PCB LAYOUT
+=============================================================================
+
+For permanent installation, design a PCB with:
+
+1. ESP32-C6 module in center
+2. Two round cutouts for displays on left/right
+3. Power regulator (3.3V, 1A capacity)
+4. Status LED on GPIO1
+5. Reset button
+6. USB-C connector for programming/power
+
+Recommended PCB size: 120mm × 50mm
+
+=============================================================================
+POWER OPTIONS
+=============================================================================
+
+Option 1: USB Power (Development)
+  - Connect USB-C to ESP32-C6
+  - Simple, reliable
+  - 5V → 3.3V regulator onboard
+
+Option 2: Battery Power (Portable)
+  - Use 3.7V LiPo battery (1000mAh+)
+  - Add 3.3V LDO regulator (AMS1117-3.3)
+  - Runtime: ~3-4 hours at full brightness
+  - Add JST connector for easy battery swap
+
+Option 3: External 5V Supply
+  - Use 5V 1A wall adapter
+  - Connect to 5V pin (bypasses USB)
+  - Good for permanent installations
+
+=============================================================================
+TESTING CHECKLIST
+=============================================================================
+
+□ 1. Power on ESP32-C6 alone (verify red LED)
+□ 2. Connect Display 1, check backlight turns on
+□ 3. Upload test sketch, verify Display 1 shows graphics
+□ 4. Connect Display 2, verify backlight turns on
+□ 5. Upload dual display code
+□ 6. Verify both displays show cat eyes
+□ 7. Connect to WiFi "CatEyes-XXXX"
+□ 8. Open web interface at 192.168.4.1
+□ 9. Test all eye movement directions
+□ 10. Test color changes
+□ 11. Test blink animation
+
+=============================================================================
+ALTERNATIVE PIN CONFIGURATIONS
+=============================================================================
+
+If you need I2C for badge communication, use this alternative:
+
+Display 1: CS=GPIO1, DC=GPIO2, RST=GPIO3
+Display 2: CS=GPIO4, DC=GPIO5, RST=GPIO10
+SPI: SCK=GPIO20, MOSI=GPIO21 (same)
+I2C: SDA=GPIO6, SCL=GPIO7 (available for badge)
+
+Update pin definitions in .ino file accordingly.
+
+=============================================================================

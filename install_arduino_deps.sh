@@ -193,6 +193,18 @@ install_arduino_libraries() {
     install_library_git "Adafruit_NeoPixel" \
         "https://github.com/adafruit/Adafruit_NeoPixel.git"
 
+    # Adafruit GFX (base graphics library)
+    install_library_git "Adafruit-GFX-Library" \
+        "https://github.com/adafruit/Adafruit-GFX-Library.git"
+
+    # Adafruit BusIO (SPI/I2C support)
+    install_library_git "Adafruit_BusIO" \
+        "https://github.com/adafruit/Adafruit_BusIO.git"
+
+    # Adafruit ST7735 and ST7789 (for GC9A01 compatibility)
+    install_library_git "Adafruit-ST7735-Library" \
+        "https://github.com/adafruit/Adafruit-ST7735-Library.git"
+
     # QRCode library for QR code generation
     install_library_git "QRCode" \
         "https://github.com/ricmoo/QRCode.git"
@@ -219,6 +231,30 @@ install_arduino_libraries() {
 
     echo ""
     print_status "All libraries installed"
+}
+
+# Fix Arduino_GFX for ESP32 Core 3.x compatibility
+fix_arduino_gfx() {
+    print_info "Fixing Arduino_GFX for ESP32 Core 3.x compatibility..."
+
+    local fix_script="$PROJECT_DIR/fix_arduino_gfx.py"
+
+    if [ ! -f "$fix_script" ]; then
+        print_warning "Fix script not found, skipping Arduino_GFX patch"
+        return
+    fi
+
+    if [ ! -d "$ARDUINO_LIBRARIES/Arduino_GFX" ]; then
+        print_warning "Arduino_GFX not installed yet, skipping fix"
+        return
+    fi
+
+    python3 "$fix_script" > /dev/null 2>&1
+    if [ $? -eq 0 ]; then
+        print_status "Arduino_GFX patched for ESP32 Core 3.x"
+    else
+        print_warning "Could not patch Arduino_GFX (might already be fixed)"
+    fi
 }
 
 # Configure TFT_eSPI for GC9A01 displays
@@ -443,6 +479,9 @@ main() {
 
     # Install libraries
     install_arduino_libraries
+
+    # Fix Arduino_GFX for ESP32 Core 3.x
+    fix_arduino_gfx
 
     # Configure TFT_eSPI
     configure_tft_espi

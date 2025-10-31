@@ -1,6 +1,14 @@
-# Framework Badge + XIAO ESP32-S3 Dual-Microcontroller System
+# Framework Badge + ESP32 ProS3 Dual-Microcontroller System
 
-Integration of Seeed XIAO ESP32-S3 via SAO port to add WiFi/Bluetooth capabilities to the RP2040-based Framework Badge.
+Integration of **Unexpected Maker ESP32 ProS3** via SAO port to add WiFi/Bluetooth capabilities to the RP2040-based Framework Badge.
+
+**Why ProS3?**
+- **16MB Flash** - Plenty of space for web interfaces and OTA updates
+- **8MB PSRAM** - Smooth graphics and buffering
+- **STEMMA QT Connector** - Plug-and-play I2C connection (GPIO8/GPIO9)
+- **Dual 700mA LDOs** - Rock-solid power for badge + WiFi operation
+- **Battery Charging** - Built-in LiPo management
+- **Ultra-low Deep Sleep** - Only 10µA in deep sleep mode
 
 <img width="617" height="845" alt="image" src="https://github.com/user-attachments/assets/d501fa13-9304-41f4-819b-10ed1fb17859" />
 
@@ -55,31 +63,50 @@ Integration of Seeed XIAO ESP32-S3 via SAO port to add WiFi/Bluetooth capabiliti
   - Battery monitoring
   - Sending display/action requests to ESP32-S3
 
-### XIAO ESP32-S3 - I2C Slave
+### ESP32 ProS3 - I2C Slave
 - **Role:** Wireless communication coprocessor
 - **I2C Slave Address:** 0x42 (configurable)
+- **I2C Pins:** GPIO8 (SDA), GPIO9 (SCL) via STEMMA QT connector
 - **Capabilities:**
-  - WiFi (2.4GHz 802.11 b/g/n)
+  - WiFi (802.11b/g/n, 2.4GHz)
   - Bluetooth 5.0 (BLE)
-  - Optional: Camera, microSD, extra GPIOs
   - Web server for badge control
   - BLE beacon/mesh networking
+  - HTTP client for cloud integration
   - OTA firmware updates
+  - 27 additional GPIOs for expansion
 
 ## Pin Connections
 
-### SAO Port (4-pin standard v0.1)
+### Option 1: STEMMA QT Connector (Recommended - Easiest!)
+
+The ProS3 has a built-in STEMMA QT connector that makes I2C connection plug-and-play.
 
 ```
-Framework Badge SAO Port          XIAO ESP32-S3
+Framework Badge SAO Port          ESP32 ProS3 STEMMA QT
+─────────────────────────         ─────────────────────────
+Pin 1: VCC (+3.3V)            →   Red wire (3.3V)
+Pin 2: GND                    →   Black wire (GND)
+Pin 3: SDA (IO#23 or IO#24)   →   Blue wire (GPIO 8 SDA)
+Pin 4: SCL (IO#24 or IO#25)   →   Yellow wire (GPIO 9 SCL)
+```
+
+**Note:** You'll need a custom SAO-to-STEMMA QT adapter cable since the pinouts differ. Alternatively, use Option 2 below.
+
+### Option 2: Direct GPIO Wiring
+
+Wire directly to the ProS3's GPIO header pins:
+
+```
+Framework Badge SAO Port          ESP32 ProS3
 ─────────────────────────         ─────────────────
-Pin 1: VCC (+3.3V)            →   5V or 3V3 pin
+Pin 1: VCC (+3.3V)            →   3V3 pin
 Pin 2: GND                    →   GND
-Pin 3: SDA (IO#23 or IO#24)   →   GPIO 6 (D4/SDA)
-Pin 4: SCL (IO#24 or IO#25)   →   GPIO 7 (D5/SCL)
+Pin 3: SDA (IO#23 or IO#24)   →   GPIO 8 (SDA)
+Pin 4: SCL (IO#24 or IO#25)   →   GPIO 9 (SCL)
 ```
 
-**Note:** SAO port reuses Whisker header pins in a different physical arrangement.
+**Note:** SAO port reuses Whisker header pins in a different physical arrangement. See `WIRING.txt` for complete wiring diagrams.
 
 ### RP2040 I2C Configuration
 - **SDA:** IO#23 (or IO#24, configurable)
@@ -87,10 +114,12 @@ Pin 4: SCL (IO#24 or IO#25)   →   GPIO 7 (D5/SCL)
 - **I2C Speed:** 100kHz (standard) or 400kHz (fast mode)
 - **Pull-ups:** 4.7kΩ on both SDA and SCL (may be built into badge)
 
-### ESP32-S3 I2C Configuration
-- **SDA:** GPIO 6 (D4, default I2C)
-- **SCL:** GPIO 7 (D5, default I2C)
-- **I2C Address:** 0x42 (default, avoid conflicts with 0x3C for OLED, etc.)
+### ESP32 ProS3 I2C Configuration
+- **SDA:** GPIO 8 (STEMMA QT connector)
+- **SCL:** GPIO 9 (STEMMA QT connector)
+- **I2C Address:** 0x42
+- **Clock Speed:** 100kHz (standard I2C)
+- **Pull-ups:** Internal 45kΩ (external 4.7kΩ recommended for reliability)
 
 ## Communication Protocol
 
@@ -190,11 +219,12 @@ Pin 4: SCL (IO#24 or IO#25)   →   GPIO 7 (D5/SCL)
 
 | Component | Typical | Peak | Notes |
 |-----------|---------|------|-------|
-| RP2040 | 40-60mA | 100mA | Running LED animations |
+| RP2040 (badge) | 40-60mA | 100mA | Running LED animations |
 | LED Matrix | 50-200mA | 400mA | At 15% brightness, ~25% pixels |
-| ESP32-S3 (idle) | 20-40mA | - | WiFi off, BLE off |
-| ESP32-S3 (WiFi) | 80-120mA | 200mA | Active WiFi transmission |
-| ESP32-S3 (BLE) | 30-50mA | 100mA | BLE advertising |
+| ESP32 ProS3 (idle) | 25-45mA | - | WiFi off, BLE off |
+| ESP32 ProS3 (WiFi) | 90-180mA | 200mA | Active WiFi transmission |
+| ESP32 ProS3 (BLE) | 30-50mA | 100mA | BLE advertising |
+| ESP32 ProS3 (sleep) | 10µA | - | Ultra-low deep sleep mode |
 | **Total (typical)** | **150-350mA** | **800mA** | Depends on usage |
 
 ### Battery Life Estimates (2×AA, 2500mAh)
@@ -311,13 +341,22 @@ void loop() {
 - **Weak signal:** ESP32-S3 antenna orientation matters
 - **Slow response:** Reduce LED animation complexity
 
-## Example Applications
+## Firmware and Documentation
 
-See the following directories:
-- `RP2040_Master/` - Badge firmware with I2C master
-- `ESP32_S3_Slave/` - WiFi/BLE coprocessor firmware
-- `Web_Interface/` - HTML/JS for web control
-- `Examples/` - Complete use case implementations
+### Firmware Directories:
+- `RP2040_Master/` - Badge firmware with I2C master (basic)
+- `RP2040_Enhanced/` - Badge firmware with QR code, cat animation, web LED
+- `ESP32_ProS3_Slave/` - ProS3 WiFi/BLE coprocessor (basic)
+- `ESP32_ProS3_Enhanced/` - ProS3 WiFi AP + web server with LED designer
+- `Web_Interface/` - HTML/JS for LED matrix web control
+
+### Documentation:
+- `README.md` - This file (system overview)
+- `WIRING.txt` - Complete wiring guide and pinout diagrams
+- `ESP32_PROS3_SETUP.md` - **ProS3 Arduino IDE setup guide**
+- `GETTING_STARTED.md` - Quick start tutorial
+- `ENHANCED_FEATURES.md` - QR code, cat animation, web interface guide
+- `LIBRARY_SETUP.md` - Library installation instructions
 
 ## Safety Notes
 
@@ -338,7 +377,18 @@ See the following directories:
 
 ## References
 
-- XIAO ESP32-S3 Wiki: https://wiki.seeedstudio.com/xiao_esp32s3_getting_started/
-- SAO Specification: https://hackaday.io/project/52950-shitty-add-ons
-- ESP32 Arduino Core: https://github.com/espressif/arduino-esp32
-- I2C Protocol: https://www.i2c-bus.org/
+### Hardware:
+- **ESP32 ProS3:** https://esp32s3.com/pros3.html
+- **ProS3 GitHub:** https://github.com/UnexpectedMaker/esp32s3
+- **SAO Specification:** https://hackaday.io/project/52950-shitty-add-ons
+- **STEMMA QT:** https://learn.adafruit.com/introducing-adafruit-stemma-qt
+
+### Software:
+- **ESP32 Arduino Core:** https://github.com/espressif/arduino-esp32
+- **ArduinoJson:** https://arduinojson.org/
+- **I2C Protocol:** https://www.i2c-bus.org/
+
+### Community & Support:
+- **Unexpected Maker Discord:** https://unexpectedmaker.com/discord
+- **ESP32 Forum:** https://esp32.com/
+- **Framework Badge Repository:** https://github.com/mkohler99/Framework-2025-Badge

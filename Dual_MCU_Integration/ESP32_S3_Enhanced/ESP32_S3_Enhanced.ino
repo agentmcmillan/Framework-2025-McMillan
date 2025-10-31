@@ -1,21 +1,24 @@
 /*
- * XIAO ESP32-C6 - Enhanced WiFi AP + Web Server
+ * ESP32 ProS3 Enhanced - WiFi AP + Web Server + LED Designer
  *
  * Provides WiFi Access Point with web interface for LED matrix drawing.
  * Serves HTML page for designing LED patterns and sends them to RP2040.
  *
  * Hardware:
- * - Seeed XIAO ESP32-C6
- * - Connected to Framework Badge via SAO port
- * - I2C: SDA=GPIO6, SCL=GPIO7
+ * - Unexpected Maker ESP32 ProS3
+ * - 16MB Flash (perfect for storing web files!)
+ * - 8MB PSRAM (buffering LED data)
+ * - STEMMA QT connector (GPIO8/GPIO9 for I2C)
+ *
+ * Connection: SAO port (4-pin) or STEMMA QT connector
+ * Power: 3.3V from badge via SAO port
  *
  * Features:
- * - WiFi 6 AP mode (SSID: "PixelKitty-XXXX")
- * - Web server with LED drawing interface
- * - QR code data generation for WiFi connection
- * - I2C communication with RP2040
- *
- * Note: ESP32-C6 uses RISC-V architecture, supports WiFi 6 (802.11ax)
+ * - WiFi AP mode (SSID: "PixelKitty-XXXX")
+ * - Web server with interactive LED drawing interface
+ * - QR code data generation for easy WiFi connection
+ * - I2C communication with RP2040 for LED control
+ * - Captive portal for automatic web page redirect
  */
 
 #include <Wire.h>
@@ -25,19 +28,29 @@
 #include <ArduinoJson.h>
 
 // ============================================================================
-// CONFIGURATION
+// HARDWARE CONFIGURATION - ESP32 ProS3
+// ============================================================================
+
+#define BOARD_NAME      "ESP32 ProS3"
+
+// I2C Configuration (STEMMA QT connector)
+#define I2C_SDA         8      // GPIO 8 (STEMMA QT SDA)
+#define I2C_SCL         9      // GPIO 9 (STEMMA QT SCL)
+#define I2C_SLAVE_ADDR  0x42   // I2C slave address (must match RP2040)
+
+// ProS3-specific hardware
+#define RGB_LED_PIN     48     // Built-in RGB LED
+#define RGB_BRIGHTNESS  20     // 0-255, keep low for power savings
+
+// ============================================================================
+// WIFI AP CONFIGURATION
 // ============================================================================
 
 // WiFi AP Configuration
-#define AP_SSID_PREFIX  "PixelKitty"  // Will append chip ID
+#define AP_SSID_PREFIX  "PixelKitty"  // Will append chip ID (e.g., "PixelKitty-A4B2")
 #define AP_PASSWORD     "meow1234"    // Minimum 8 characters
-#define AP_CHANNEL      6
-#define AP_MAX_CLIENTS  4
-
-// I2C Configuration
-#define I2C_SDA         6
-#define I2C_SCL         7
-#define I2C_SLAVE_ADDR  0x42
+#define AP_CHANNEL      6              // 2.4GHz channel (1-11)
+#define AP_MAX_CLIENTS  4              // Maximum simultaneous connections
 
 // Web Server
 #define WEB_SERVER_PORT 80
@@ -94,8 +107,10 @@ bool ledDataReady = false;
 void setup() {
   Serial.begin(115200);
   delay(1000);
-  Serial.println("\n\n=== XIAO ESP32-C6 Enhanced ===");
-  Serial.println("WiFi 6 AP + Web Server + LED Control");
+  Serial.println("\n\n=== ESP32 ProS3 Enhanced ===");
+  Serial.println("WiFi AP + Web Server + LED Designer");
+  Serial.println("Hardware: 16MB Flash, 8MB PSRAM");
+  Serial.println("I2C: STEMMA QT connector (GPIO8/GPIO9)");
 
   // Generate unique SSID with chip ID
   uint32_t chipId = 0;
