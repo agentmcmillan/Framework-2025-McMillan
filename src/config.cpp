@@ -6,13 +6,14 @@ static const char *CFG_PATH  = "/config.json";
 static const char *HITS_PATH = "/hits.json";
 
 static void setDefaults(BadgeConfig &c){
-  c.name         = "Badge";
+  c.name         = "Unconfigured";
   c.id           = 0;
   c.colorRGB     = 0x00FF00; // green
-  c.brightness   = 15;       // 0..128
+  c.brightness   = 7;        // 0..128
   c.unlockedMask = 0;
   c.score        = 0;
   c.sentCount    = 0;
+  c.userCharmId  = 0xFF;     // none
 }
 
 bool loadConfig(BadgeConfig &out){
@@ -29,26 +30,41 @@ bool loadConfig(BadgeConfig &out){
   f.close();
   if (e) { setDefaults(out); return false; }
 
-const char* nm = doc["name"] | "Badge";
-out.name = String(nm);
-  out.id           = uint16_t(doc["id"]                 | 0);
-  out.colorRGB     = uint32_t(doc["colorRGB"]           | 0x00FF00);
-  out.brightness   = uint8_t(doc["brightness"]          | 15);
-  out.unlockedMask = uint32_t(doc["unlockedMask"]       | 0);
-  out.score        = uint32_t(doc["score"]              | 0);
-  out.sentCount    = uint32_t(doc["sentCount"]          | 0);
+  // v7-style reads with sane fallbacks + clamps
+  const char* nm = doc["name"] | "Badge";
+  out.name = String(nm);
+
+  out.id           = (uint16_t)(doc["id"]           | 0);
+  out.colorRGB     = (uint32_t)(doc["colorRGB"]     | 0x00FF00);
+  out.brightness   = (uint8_t) constrain((int)(doc["brightness"] | 15), 0, 128);
+  out.unlockedMask = (uint32_t)(doc["unlockedMask"] | 0);
+  out.score        = (uint32_t)(doc["score"]        | 0);
+  out.sentCount    = (uint32_t)(doc["sentCount"]    | 0);
+
+  // userCharmId: 0..31 or 0xFF
+  if (doc["userCharmId"].is<uint32_t>()) {
+    uint32_t v = doc["userCharmId"].as<uint32_t>();
+    out.userCharmId = (v == 0xFF) ? 0xFF : (uint8_t)constrain((int)v, 0, 31);
+  } else {
+    out.userCharmId = 0xFF;
+  }
+
+  // keep ID in range (some old configs might have trash)
+  out.id = (uint16_t)constrain((int)out.id, 0, 1023);
+
   return true;
 }
 
 bool saveConfig(const BadgeConfig &in){
   JsonDocument doc;
   doc["name"]         = in.name;
-  doc["id"]           = in.id;
-  doc["colorRGB"]     = in.colorRGB;
-  doc["brightness"]   = in.brightness;
-  doc["unlockedMask"] = in.unlockedMask;
-  doc["score"]        = in.score;
-  doc["sentCount"]    = in.sentCount;
+  doc["id"]           = (uint32_t)in.id;
+  doc["colorRGB"]     = (uint32_t)in.colorRGB;
+  doc["brightness"]   = (uint32_t)in.brightness;
+  doc["unlockedMask"] = (uint32_t)in.unlockedMask;
+  doc["score"]        = (uint32_t)in.score;
+  doc["sentCount"]    = (uint32_t)in.sentCount;
+  doc["userCharmId"]  = (uint32_t)in.userCharmId;   // 0..31 or 0xFF
 
   File f = LittleFS.open(CFG_PATH, "w");
   if (!f) return false;

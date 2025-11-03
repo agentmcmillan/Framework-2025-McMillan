@@ -35,11 +35,18 @@
 #define SCN_H 7
 #define SCN_PIX (SCN_W*SCN_H)
 
+// spacing between text and first icon, and between icons
+#define TEXT_ICON_GAP  3
+#define ICON_SPACING   1
+
+
 //#endif
 
 static uint32_t btnLastMs = 0;
 static bool prevB1 = true, prevB2 = true, prevB3 = true;
 
+static const char BUILD_DATE[] = __DATE__;
+static const char BUILD_TIME[] = __TIME__;
 
 CRGB leds[NUM_LEDS];
 
@@ -65,6 +72,100 @@ FastLED_NeoMatrix* matrix = new FastLED_NeoMatrix(
 // ---------------- Config / state ----------------
 BadgeConfig CFG;
 
+// ================== Scoring state + helpers ==================
+struct ScoreState {
+  uint32_t score = 0;          // running total
+  uint32_t hits_total = 0;     // any FIRE seen
+  uint32_t fires_total = 0;    // local button-2 fires
+  uint32_t sessions_woke = 0;  // WAKE events seen
+  uint32_t scenes_triggered = 0;
+
+  uint32_t rolls_5 = 0, rolls_10 = 0, rolls_20 = 0, rolls_40 = 0; // audit
+} g_score;
+
+// persistent meta for throttled saves
+static bool     g_scoreDirty = false;
+static uint32_t g_scoreLastSave = 0;
+
+// Simple, stable RNG roll in [1..sides]
+static uint16_t scoreRoll(uint8_t sides) {
+  if (sides < 1) sides = 1;
+  // randomSeed should be set in setup(); this is inclusive
+  return (uint16_t)random(1, (long)sides + 1);
+}
+
+static void scoreAddInternal(uint32_t points, const char* why) {
+  g_score.score += points;
+  g_scoreDirty = true;
+  if (why) Serial.printf("[SCORE] +%lu (%s) → %lu\n", (unsigned long)points, why, (unsigned long)g_score.score);
+}
+
+// Award “roll X”: add a random 1..X
+static void scoreAwardRoll(uint8_t sides, const char* why) {
+  uint16_t add = scoreRoll(sides);
+  switch (sides) {
+    case 5:  g_score.rolls_5++;  break;
+    case 10: g_score.rolls_10++; break;
+    case 20: g_score.rolls_20++; break;
+    case 40: g_score.rolls_40++; break;
+  }
+  scoreAddInternal(add, why);
+}
+
+// Public helpers (used by serial_cmds.cpp too)
+uint32_t scoreGet()            { return g_score.score; }
+void     scoreSet(uint32_t v)  { g_score.score = v; g_scoreDirty = true; Serial.printf("[SCORE] SET → %lu\n", (unsigned long)v); }
+void     scoreAdd(int32_t d)   { if (d >= 0) scoreAddInternal((uint32_t)d, "serial add"); else {
+                                   uint32_t sub = (uint32_t)(-d);
+                                   g_score.score = (g_score.score > sub) ? (g_score.score - sub) : 0;
+                                   g_scoreDirty = true;
+                                   Serial.printf("[SCORE] ADD %ld → %lu\n", (long)d, (unsigned long)g_score.score);
+                                 } }
+
+// Optional: persist score counters (keep raw stats for long-term download)
+static bool scoreSave() {
+  File f = LittleFS.open("/score.json", "w");
+  if (!f) return false;
+  StaticJsonDocument<384> doc;
+  doc["score"]            = g_score.score;
+  doc["hits_total"]       = g_score.hits_total;
+  doc["fires_total"]      = g_score.fires_total;
+  doc["sessions_woke"]    = g_score.sessions_woke;
+  doc["scenes_triggered"] = g_score.scenes_triggered;
+  doc["r5"]  = g_score.rolls_5;
+  doc["r10"] = g_score.rolls_10;
+  doc["r20"] = g_score.rolls_20;
+  doc["r40"] = g_score.rolls_40;
+  serializeJson(doc, f);
+  f.close();
+  g_scoreDirty = false;
+  g_scoreLastSave = millis();
+  return true;
+}
+static void scoreLoad() {
+  File f = LittleFS.open("/score.json", "r");
+  if (!f) return;
+  StaticJsonDocument<384> doc;
+  if (deserializeJson(doc, f) == DeserializationError::Ok) {
+    g_score.score            = doc["score"]           | 0u;
+    g_score.hits_total       = doc["hits_total"]      | 0u;
+    g_score.fires_total      = doc["fires_total"]     | 0u;
+    g_score.sessions_woke    = doc["sessions_woke"]   | 0u;
+    g_score.scenes_triggered = doc["scenes_triggered"]| 0u;
+    g_score.rolls_5  = doc["r5"]  | 0u;
+    g_score.rolls_10 = doc["r10"] | 0u;
+    g_score.rolls_20 = doc["r20"] | 0u;
+    g_score.rolls_40 = doc["r40"] | 0u;
+  }
+  f.close();
+}
+
+// Call this in loop() to avoid flash spam
+static void scoreMaybeAutoSave() {
+  if (!g_scoreDirty) return;
+  if (millis() - g_scoreLastSave >= 3000) (void)scoreSave();
+}
+
 
 // --- SCORE response throttle (default 30s) ---
 #ifndef SCORE_RESP_MIN_MS
@@ -89,7 +190,7 @@ static inline bool scoreThrottleOk() {
 
 
 // exact 0..128 -> 0..255
-static inline uint8_t map128to255(uint8_t v){ return (uint16_t(v)*255u)/128u; }
+uint8_t map128to255(uint8_t v){ return (uint16_t(v)*255u)/128u; }
 static inline uint16_t badgeColor565() {
   uint8_t r=(CFG.colorRGB>>16)&0xFF, g=(CFG.colorRGB>>8)&0xFF, b=CFG.colorRGB&0xFF;
   return matrix->Color(r,g,b);
@@ -112,7 +213,7 @@ static inline bool statsAddAttacker(uint16_t id) {
   return !was;
 }
 
-static inline uint16_t statsUniqueCount() {
+uint16_t statsUniqueCount() {
   uint16_t n = 0;
   for (int i=0;i<16;i++) n += __builtin_popcount(g_attackerBits[i]);
   return n;
@@ -176,7 +277,7 @@ static void sendSirc20(uint32_t word, const char* tag = nullptr) {
 static void sendFireBadge(uint8_t charm = 0) {
         IrReceiver.disableIRIn(); 
 
-  uint32_t w = sirc20Pack(/*op=*/0x00, /*attacker=*/CFG.id, /*charm=*/(charm & 31));
+  uint32_t w = sirc20Pack(/*op=*/0x00, /*attacker=*/CFG.id, /*charm=*/(CFG.userCharmId & 31));
   sendSirc20(w, "FIRE");
   delay(30);
         IrReceiver.enableIRIn(); 
@@ -224,7 +325,7 @@ static String buildIdleLine() {
 static String resolveMessageText(uint8_t id) {
   if (id == 0) return buildIdleLine();
   switch (id) {
-    case 1: return "All your base are belong to us";
+    case 1: return "Fuse CATS: Michael Kohler, Andy Babin, and Ryan Middlemiss 2025";
     case 2: return "Share and enjoy";
     case 3: return "Pixera starts in Room 1 soon";
     default: return String("MSG ") + id;
@@ -239,6 +340,7 @@ struct ScrollState {
   String   text;
   int16_t  x = WIDTH;            // cursor X
   uint16_t w = 0;                // text pixel width
+  uint16_t contentW = 0;   // <-- total width (text + gap + charm if any)
   uint32_t lastStep = 0;         // pacing
 } g_scroll;
 
@@ -251,8 +353,13 @@ static int16_t boX = 0;
 static int8_t  boDir = +1;
 static uint8_t rbHueBase = 0;
 
+static inline bool hasUserCharm() {
+  return (CFG.userCharmId != 0xFF);  // no unlock check; always show if configured
+}
 
-static void startScroll(bool idle, uint8_t msgId = 0, uint8_t reps = 0, uint16_t color = 0) {
+
+
+void startScroll(bool idle, uint8_t msgId = 0, uint8_t reps = 0, uint16_t color = 0) {
   g_scroll.isIdle  = idle;
   g_scroll.repeats = idle ? 0 : max<uint8_t>(1, reps);
   g_scroll.color   = color ? color : badgeColor565();
@@ -262,20 +369,32 @@ static void startScroll(bool idle, uint8_t msgId = 0, uint8_t reps = 0, uint16_t
   matrix->setTextSize(1);
   matrix->setTextWrap(false);
 
+  // Text width (5x7 font + 1px gap each char -> you used CHAR_W = 6)
   g_scroll.w = g_scroll.text.length() * CHAR_W;
 
-  if (g_textMode == TM_SCROLL || g_textMode == TM_RAINBOW) {
-    g_scroll.x = WIDTH;      // start off-screen right
-  } else {                   // TM_BOUNCE
-    boX = 0;
-    boDir = +1;
-    g_scroll.x = 0;
-  }
+  // If idle and a user charm is set, add its width + a small gap
+  const uint16_t ICON_W   = hasUserCharm() ? CHARM_W : 0;
+  const uint16_t ICON_GAP = hasUserCharm() ? 3 : 0;
 
-  rbHueBase = 0;
+  g_scroll.contentW = g_scroll.w + ICON_GAP + ICON_W;
+
+  g_scroll.x = WIDTH;           // start offscreen to the right
   g_scroll.lastStep = 0;
   g_scroll.active = true;
 }
+
+// Draw charm `id` at (x,y) using RGB565 from PROGMEM
+static void drawCharm565(uint8_t id, int16_t x, int16_t y) {
+  if (id >= CHARM_COUNT) return;
+  const uint16_t* p = charms565[id];
+  for (uint8_t yy = 0; yy < CHARM_H; ++yy) {
+    for (uint8_t xx = 0; xx < CHARM_W; ++xx) {
+      uint16_t c = pgm_read_word(p++);      // 16-bit RGB565
+      matrix->drawPixel(x + xx, y + yy, c); // NeoMatrix takes 565 directly
+    }
+  }
+}
+
 
 static void renderScrollTick() {
   const uint32_t now = millis();
@@ -290,17 +409,32 @@ static void renderScrollTick() {
   switch (g_textMode) {
     case TM_SCROLL: {
       matrix->setTextColor(g_scroll.color);
+
+      // Draw text at current x
       matrix->setCursor(g_scroll.x, 0);
       matrix->print(g_scroll.text);
+
+      // If idle, append the user charm inline so it scrolls together
+      if (g_scroll.isIdle && hasUserCharm()) {
+        const int ICON_GAP = 3;
+        const int iconX = g_scroll.x + (int)g_scroll.w + ICON_GAP;
+        drawCharm565(CFG.userCharmId, iconX, 0);
+      }
+
       FastLED.show();
 
+      // Move left
       g_scroll.x--;
-      if (g_scroll.x < -(int)g_scroll.w) {
-        if (!g_scroll.isIdle && --g_scroll.repeats == 0) {
-          startScroll(true);
-          return;
+
+      // Wrap when all content (text + optional icon) has fully left the screen
+      if (g_scroll.x < -(int)g_scroll.contentW) {
+        if (!g_scroll.isIdle) {
+          if (--g_scroll.repeats == 0) {
+            startScroll(/*idle*/true);
+            break;
+          }
         }
-        g_scroll.x = WIDTH;
+        g_scroll.x = WIDTH; // restart same content
       }
     } break;
 
@@ -356,6 +490,8 @@ static void onShowMessage(uint8_t msgId, uint8_t scrolls) {
   Serial.printf("[MSG] NOW id=%u scrolls=%u\n", msgId, scrolls);
 }
 
+
+/*
 // Draw charm `id` at top-left (x,y). Assumes your matrix origin is top-left.
 void drawCharm(uint8_t id, int16_t x, int16_t y) {
   if (id >= CHARM_COUNT) return;
@@ -370,19 +506,16 @@ void drawCharm(uint8_t id, int16_t x, int16_t y) {
   }
   FastLED.show();
 }
+*/
 
-// Draw charm `id` at (x,y) using RGB565 from PROGMEM
-// Draw charm `id` at (x,y) using RGB565 from PROGMEM
-static void drawCharm565(uint8_t id, int16_t x, int16_t y) {
-  if (id >= CHARM_COUNT) return;
-  const uint16_t* p = charms565[id];
-  for (uint8_t yy = 0; yy < CHARM_H; ++yy) {
-    for (uint8_t xx = 0; xx < CHARM_W; ++xx) {
-      uint16_t c = pgm_read_word(p++);      // 16-bit RGB565
-      matrix->drawPixel(x + xx, y + yy, c); // NeoMatrix takes 565 directly
-    }
+
+
+
+static inline void drawUserCharmOverlay() {
+  if (hasUserCharm()) {
+    // draw at left; icon is 9x7
+    drawCharm565(CFG.userCharmId, /*x=*/0, /*y=*/0);
   }
-  FastLED.show();  // ← ensure update happens
 }
 
 //scene
@@ -482,25 +615,63 @@ static void fireAnimRender() {
 // ---- Stats view state machine ----
 struct StatsView {
   bool active = false;
-  uint8_t phase = 0;      // 0 = count screen, 1 = charms slideshow
+  uint8_t phase = 0;          // 0 = scrolling line, 1 = charms slideshow
   uint32_t t0 = 0;
-  // list of unlocked charm indices to show
+
+  // unlocked list
   uint8_t list[32];
   uint8_t count = 0;
   uint8_t idx = 0;
+
+  // phase-0 scroller state
+  String  line;               // e.g., "H:23  Charms:5"
+  int16_t scX = 0;
+  uint16_t scW = 0;
+  uint32_t lastStep = 0;
+  uint8_t  loops = 0;         // number of completed scroll loops
+  uint16_t scTextW = 0;     // pixels of "S:...  Charms:N"
+  uint16_t scIconsW = 0;    // pixels for all icons + inter-icon spacing
+  uint16_t contentW = 0;    // scTextW + TEXT_ICON_GAP + scIconsW
 } g_stats;
 
 static void statsStart() {
   // build list of unlocked charms, clamp to CHARM_COUNT
   g_stats.count = 0;
-  for (uint8_t i=0; i<32; i++){
-    if ((CFG.unlockedMask & (1UL<<i)) && i < CHARM_COUNT) {
+  for (uint8_t i = 0; i < 32; i++) {
+    if ((CFG.unlockedMask & (1UL << i)) && i < CHARM_COUNT) {
       g_stats.list[g_stats.count++] = i;
     }
   }
+
+  // Build scrolling status line for phase 0
+  const uint32_t score = g_score.score;           // <-- your stored score
+  g_stats.line = String("Score: ") + score + "  Charms:" + g_stats.count;
+
   g_stats.phase = 0;
   g_stats.idx = 0;
   g_stats.t0 = millis();
+
+  // init scroller geometry
+  matrix->setFont(NULL);
+  matrix->setTextSize(1);
+  matrix->setTextWrap(false);
+
+  g_stats.scTextW  = g_stats.line.length() * CHAR_W;
+
+  // width of icons block (only if there are unlocked charms)
+  if (g_stats.count) {
+    g_stats.scIconsW = (g_stats.count * CHARM_W) + ((g_stats.count - 1) * ICON_SPACING);
+    g_stats.contentW = g_stats.scTextW + TEXT_ICON_GAP + g_stats.scIconsW;
+  } else {
+    g_stats.scIconsW = 0;
+    g_stats.contentW = g_stats.scTextW;
+  }
+
+  g_stats.scW = g_stats.contentW;   // scroll total = text + (gap + icons if any)
+  g_stats.scX = WIDTH;              // start off right edge
+  g_stats.lastStep = 0;
+  g_stats.loops = 0;
+
   g_stats.active = true;
 }
 
@@ -509,41 +680,59 @@ static void statsTick() {
   const uint32_t now = millis();
 
   if (g_stats.phase == 0) {
-    // (unchanged) show unique attackers for ~1s
-    uint16_t attackers = statsUniqueCount();
-    matrix->fillScreen(0);
-    matrix->setFont(NULL);
-    matrix->setTextSize(1);
-    matrix->setTextWrap(false);
-    matrix->setTextColor(matrix->Color(255,255,255));
-    char buf[8];
-    snprintf(buf, sizeof(buf), "H:%u", attackers);
-    int16_t x1,y1; uint16_t w,h;
-    matrix->getTextBounds(buf, 0, 0, &x1, &y1, &w, &h);
-    int16_t x = (WIDTH - (int)w)/2; if (x < 0) x = 0;
-    matrix->setCursor(x, 0);
-    matrix->print(buf);
-    FastLED.show();
+    if (now - g_stats.lastStep >= SCROLL_MS) {
+      g_stats.lastStep = now;
 
-    if (now - g_stats.t0 > 1000) { g_stats.phase = 1; g_stats.t0 = now; }
+      matrix->fillScreen(0);
+      matrix->setFont(NULL);
+      matrix->setTextSize(1);
+      matrix->setTextWrap(false);
+      matrix->setTextColor(matrix->Color(255, 255, 255));
+
+      // draw the text
+      matrix->setCursor(g_stats.scX, 0);
+      matrix->print(g_stats.line);
+
+      // draw the icons right after the text (if any)
+      if (g_stats.count) {
+        int16_t x = g_stats.scX + (int)g_stats.scTextW + TEXT_ICON_GAP;
+        for (uint8_t i = 0; i < g_stats.count; ++i) {
+          drawCharm565(g_stats.list[i], x, 0);          // uses CHARM_W/CHARM_H from charms565.hpp
+          x += CHARM_W + ICON_SPACING;
+        }
+      }
+
+      FastLED.show();
+
+      // advance, then wrap when the whole strip has left
+      g_stats.scX--;
+      if (g_stats.scX < -(int)g_stats.contentW) {
+        g_stats.scX = WIDTH;
+        g_stats.loops++;
+        if (g_stats.loops >= 2) {   // after 2 full passes, go to charms slideshow
+          g_stats.phase = 1;
+          g_stats.t0 = now;
+        }
+      }
+    }
     return;
   }
 
-  // phase 1: cycle each unlocked charm (400ms each)
+  // Phase 1: cycle each unlocked charm (400ms each)
   if (g_stats.phase == 1) {
     if (g_stats.idx < g_stats.count) {
       if (now - g_stats.t0 >= 400) {
-        matrix->fillScreen(0);                                   // ← clear before drawing
-        drawCharm565(g_stats.list[g_stats.idx], /*x=*/3, /*y=*/0);
+        matrix->fillScreen(0);
+        drawCharm565(g_stats.list[g_stats.idx], 3, 0);
+        FastLED.show();
         g_stats.idx++;
         g_stats.t0 = now;
       }
     } else {
-      g_stats.active = false; // done
+      g_stats.active = false; // done; return to normal display
     }
   }
 }
-
 
 // Show all charms in a simple strip for verification
 void testAllCharms() {
@@ -579,6 +768,8 @@ static void handleButtons() {
     // BTN2: Fire (send + local FX)
     //fireAnimStart();
     sendFireBadge(/*charm=*/0);  // change charm if you want local testing
+    g_score.fires_total++;
+
     Serial.println("Send Fire");
   }
 
@@ -606,12 +797,33 @@ void handleIR() {
       case 0x00: { // FIRE
         uint8_t charm = hi5 & 0x1F;
         Serial.printf("[IR] FIRE attacker=%u charm=%u\n", attacker, charm);
-        fireAnimStart();
-        if (charm) { CFG.unlockedMask |= (1UL << charm); saveConfig(CFG); }
-        statsAddAttacker(attacker);   
-          CFG.score++; saveConfig(CFG);          // ← add this line if “score” = total hits
-          Serial.println(CFG.score);
+        g_score.hits_total++;                 // any laser tag hit → Roll 5
+        scoreAwardRoll(5, "hit");
 
+          // Unique badge ID tiers (only if first time seen)
+        bool firstTime = statsAddAttacker(attacker); // your existing unique-bitset
+        if (firstTime) {
+          if (attacker >= 300 && attacker <= 400) {
+            scoreAwardRoll(40, "unique badge 300-400");
+          } else if (attacker >= 255 && attacker <= 300) {
+            scoreAwardRoll(20, "unique badge 255-300");
+          } else if (attacker >= 1 && attacker <= 254) {
+            scoreAwardRoll(10, "unique badge 1-254");
+          }
+        }
+
+        // Charm unlock → if newly unlocked, Roll 20
+        if (charm) {
+          uint32_t bit = (1UL << (charm & 31));
+          bool was = (CFG.unlockedMask & bit);
+          if (!was) {
+            CFG.unlockedMask |= bit;
+            saveConfig(CFG);
+            scoreAwardRoll(20, "unique charm");
+          }
+        }
+
+        fireAnimStart();
       } break;
 
       case 0x01: { // SLEEP (value14: minutes 0..127)
@@ -622,6 +834,9 @@ void handleIR() {
 
       case 0x02: { // WAKE
         Serial.println("[IR] WAKE");
+        g_score.sessions_woke++;
+        scoreAwardRoll(10, "session wake");
+
         // TODO: wake behavior
       } break;
 
@@ -644,6 +859,8 @@ void handleIR() {
 
       case 0x05: { // SPECIAL_SCENE
         uint16_t sid = sirc20Value14(wLSB) & 0x7F;
+        g_score.scenes_triggered++;
+        scoreAwardRoll(40, "special scene");
         Serial.printf("[IR] SCENE %u\n", sid);
 
         // pick the scene by ID
@@ -672,9 +889,12 @@ void handleIR() {
 
           // (optional) tiny jitter so many badges don't transmit at the exact same time
           if (SCORE_RESP_JITTER_MS) delay((uint32_t)random(0, SCORE_RESP_JITTER_MS + 1));
-
-          uint16_t score15 = CFG.score & 0x7FFF;   // whatever you compute
-          sendScoreTriplet(CFG.id, score15);          // your existing robust sender
+          #define SCORE_TX_DIV  1   // set to 10 if you want to transmit “score/10”
+          uint32_t txScore = scoreGet() / SCORE_TX_DIV;
+          if (txScore > 32767) txScore = 32767;  // clamp for 3 parts (5+5+5)
+          
+            //uint16_t score15 = CFG.score & 0x7FFF;   // whatever you compute
+          sendScoreTriplet(CFG.id, txScore);          // your existing robust sender
         } break;
 
       case 0x07: {
@@ -710,12 +930,16 @@ void setup() {
   pinMode(BTN2, INPUT_PULLUP);
   pinMode(BTN3, INPUT_PULLUP);
 
+  // Seed RNG from jitter
+  randomSeed( (uint32_t)micros() ^ (uint32_t)analogRead(A0) ^ (uint32_t)millis() );
+
   #ifdef IR_TX_PIN
     IrSender.begin(IR_TX_PIN);
   #endif
 
   LittleFS.begin();
   loadConfig(CFG);
+  scoreLoad();
   statsLoadAttackers();
 
   FastLED.addLeds<CHIPSET, PIXEL_PIN, COLOR_ORDER>(leds, NUM_LEDS);
@@ -729,10 +953,10 @@ void setup() {
 
   delay(500);
   //testAllCharms();
-  //playScene(0);
- // playSpecialScene(0);
   // start idle name scroll
   startScroll(/*idle*/true);
+    Serial.printf("[BOOT] Build %s %s\n", BUILD_DATE, BUILD_TIME);
+
 }
 
 void loop() {  
@@ -755,5 +979,6 @@ void loop() {
   //else               renderScrollTick();
 
   handleSerial(); 
+  scoreMaybeAutoSave();  // throttle persistent writes
 }
 // ======================================================================

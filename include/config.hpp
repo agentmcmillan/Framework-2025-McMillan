@@ -29,6 +29,8 @@ struct BadgeConfig {
   uint32_t unlockedMask;   // 32 charms
   uint32_t score;          // total hits received
   uint32_t sentCount;      // total fires sent
+  uint8_t  userCharmId;    // 0..31, 0xFF = none
+
 };
 
 bool loadConfig(BadgeConfig &out);

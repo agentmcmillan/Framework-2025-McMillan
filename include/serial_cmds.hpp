@@ -1,6 +1,8 @@
 #pragma once
 #include "config.hpp"
 #include <ArduinoJson.h>
+#include <Arduino.h>
+
 
 // Call once per loop; non-blocking line reader.
 void handleSerial();
