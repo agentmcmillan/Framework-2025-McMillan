@@ -7,13 +7,28 @@
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 
+extern "C" {
+  #include "hardware/watchdog.h"
+}
+
+#include "hardware/vreg.h"
+
+
 // project headers you already have
 #include "config.hpp"          // BadgeConfig CFG; loadConfig/saveConfig
 #include "serial_cmds.hpp"     // void handleSerial();
 #include "protocol.h"          // just the op codes if you keep them
 #include "charms565.hpp"
 #include "scene_nyan.hpp"
+#include "scene_fuse.hpp"
+#include "scene_kitty.hpp"
 //#include "scenes.hpp"
+
+//#define SCORE_SNIFFER
+#define LOUD_SERIAL
+
+
+
 
 // ---------------- Pins / Matrix ----------------
 #define PIXEL_PIN   4
@@ -40,7 +55,21 @@
 #define ICON_SPACING   1
 
 
+#ifndef FIRE_MIN_MS
+#define FIRE_MIN_MS 5000UL   // 5 seconds between local FIREs
+#endif
+static uint32_t g_lastFireBtnMs = 0;   // last time we allowed a local FIRE
+
+
+
 //#endif
+
+// ---- Sleep/Wake ----
+#ifndef AUTO_SLEEP_MINUTES_DEFAULT
+#define AUTO_SLEEP_MINUTES_DEFAULT 30   // auto-sleep after 30 min of inactivity
+#endif
+
+
 
 static uint32_t btnLastMs = 0;
 static bool prevB1 = true, prevB2 = true, prevB3 = true;
@@ -62,7 +91,13 @@ static inline void blit565ToLeds(const uint16_t *frame565) {
   }
 }
 
+// ----- Fancy text effects -----
+enum TextEffect : uint8_t { EFFECT_SOLID=0, EFFECT_RAINBOW=1, EFFECT_FIRE=2, EFFECT_GLITCH=3 };
+static TextEffect currentTextEffect = EFFECT_SOLID;
 
+// params/state used by effects
+static CRGB textColor = CRGB(255,255,255);  // used by SOLID
+static uint8_t rainbowHue = 0;              // used by RAINBOW
 
 FastLED_NeoMatrix* matrix = new FastLED_NeoMatrix(
   leds, WIDTH, HEIGHT,
@@ -187,6 +222,152 @@ static inline bool scoreThrottleOk() {
   g_lastScoreRespMs = now;
   return true;
 }
+
+struct SleepState {
+  bool     asleep = false;
+  uint32_t lastActivityMs = 0;           // last time we saw activity (awake only)
+  uint32_t autoTimeoutMs  = AUTO_SLEEP_MINUTES_DEFAULT * 60UL * 1000UL;
+  uint8_t  savedBrightness128 = 64;      // save/restore user brightness
+} g_sleep;
+
+static inline void noteActivity() {
+  if (!g_sleep.asleep) g_sleep.lastActivityMs = millis();
+}
+
+
+
+
+#ifdef SCORE_SNIFFER
+  #include "uart_link.hpp"
+  // ================= Opcodes =================
+  static constexpr uint8_t OP_FIRE          = 0x00;
+  static constexpr uint8_t OP_SLEEP         = 0x01;
+  static constexpr uint8_t OP_WAKE          = 0x02;
+  static constexpr uint8_t OP_SET_BRIGHT    = 0x03;
+  static constexpr uint8_t OP_SHOW_MESSAGE  = 0x04;
+  static constexpr uint8_t OP_SPECIAL_SCENE = 0x05;
+
+  static constexpr uint8_t OP_SCORE_REQUEST = 0x06; // TX by this sketch (periodic)
+  static constexpr uint8_t OP_SCORE0        = 0x07; // RX payload = score[4:0]
+  static constexpr uint8_t OP_SCORE1        = 0x08; // RX payload = score[9:5]
+  static constexpr uint8_t OP_SCORE2        = 0x09; // RX payload = score[14:10]
+
+  // ================= Request pacing / housekeeping =================
+  static uint16_t g_reqPeriodMs = 1500; // changeable via UART {"t":"set","req_ms":...}
+  static constexpr uint8_t  IR_REPEATS    = 0;
+  static constexpr uint16_t IR_GAP_MS     = 8;
+  static constexpr uint16_t REQUESTER_ID  = 0;     // attacker/ID field for the request
+
+  static uint32_t g_lastReqMs = 0;
+
+  // ================= Unique badges seen (for heartbeat) =================
+  // 512 badges -> 512 bits
+  static uint32_t g_seenBits[16] = {0}; // 16 * 32 = 512
+  static inline void seenAdd(uint16_t id) {
+    if (id >= 512) return;
+    g_seenBits[id >> 5] |= (1u << (id & 31));
+  }
+  static inline uint16_t uniqueBadgeCount() {
+    uint16_t n = 0;
+    for (int i=0;i<16;i++) n += __builtin_popcount(g_seenBits[i]);
+    return n;
+  }
+
+    // ================= Triplet assembler =================
+  struct Triplet {
+    uint16_t id;              // 0..511, 0xFFFF => free
+    uint8_t  have;            // bit0=part0, bit1=part1, bit2=part2
+    uint16_t score;           // 15-bit assembled
+    uint16_t lastComplete;    // last printed score for dedupe
+    uint32_t t0;              // last activity
+    uint32_t lastPrintMs;     // last full print time
+  };
+
+  static constexpr uint8_t  MAX_TRACK = 32;
+  static constexpr uint32_t TTL_MS    = 1500; // clear partial if idle > 1.5s
+  static constexpr uint32_t DEDUPE_MS = 600;  // suppress duplicate completes
+
+  static Triplet g_trips[MAX_TRACK];
+
+  static void tripsInit() {
+    for (auto &t : g_trips) {
+      t.id = 0xFFFF; t.have = 0; t.score = 0; t.lastComplete = 0; t.t0 = 0; t.lastPrintMs = 0;
+    }
+  }
+  static Triplet* tripsFind(uint16_t id) {
+    for (auto &t : g_trips) if (t.id == id) return &t;
+    return nullptr;
+  }
+  static Triplet* tripsAlloc(uint16_t id) {
+    for (auto &t : g_trips) if (t.id == 0xFFFF) {
+      t.id = id; t.have = 0; t.score = 0; t.t0 = millis(); t.lastComplete=0; t.lastPrintMs=0;
+      return &t;
+    }
+    // evict oldest or stale
+    uint32_t now = millis();
+    Triplet* oldest = &g_trips[0];
+    for (auto &t : g_trips) {
+      if (t.id != 0xFFFF && (now - t.t0) > TTL_MS) {
+        t.id = id; t.have = 0; t.score = 0; t.t0 = now; t.lastComplete=0; t.lastPrintMs=0;
+        return &t;
+      }
+      if (t.t0 < oldest->t0) oldest = &t;
+    }
+    oldest->id = id; oldest->have = 0; oldest->score = 0; oldest->t0 = now; oldest->lastComplete=0; oldest->lastPrintMs=0;
+    return oldest;
+  }
+  static void tripsHousekeep() {
+    uint32_t now = millis();
+    for (auto &t : g_trips) {
+      if (t.id != 0xFFFF && (now - t.t0) > TTL_MS) {
+        t.id = 0xFFFF; t.have = 0; t.score = 0; t.lastComplete = 0; t.lastPrintMs = 0;
+      }
+    }
+  }
+
+  static void processScorePart(uint16_t id, uint8_t which /*0,1,2*/, uint8_t payload5) {
+    Triplet* tr = tripsFind(id);
+    if (!tr) tr = tripsAlloc(id);
+    tr->t0 = millis();
+    seenAdd(id); // track unique for heartbeat
+
+    // Insert bits into 15-bit score: [4:0], [9:5], [14:10]
+    switch (which) {
+      case 0: tr->score = (tr->score & ~0x001F) | (payload5 & 0x1F);         tr->have |= 0x01; break;
+      case 1: tr->score = (tr->score & ~0x03E0) | ((payload5 & 0x1F) << 5);  tr->have |= 0x02; break;
+      case 2: tr->score = (tr->score & ~0x7C00) | ((payload5 & 0x1F) <<10);  tr->have |= 0x04; break;
+      default: return;
+    }
+
+    Serial.printf("[SCORE] part=%u id=%u bits=0x%02X have=0x%02X\n",
+                  which, id, payload5 & 0x1F, tr->have);
+
+    // Notify ESP about the part we just received
+    UartLink::sendPart(id, which, (payload5 & 0x1F), tr->have);
+
+    if (tr->have == 0x07) {
+      uint32_t now = millis();
+      if (tr->lastComplete == tr->score && (now - tr->lastPrintMs) < DEDUPE_MS) {
+        tr->have = 0; // suppress duplicate final print from repeats
+        return;
+      }
+      tr->lastComplete = tr->score;
+      tr->lastPrintMs  = now;
+
+      Serial.printf("[SCORE] COMPLETE id=%u score=%u\n", tr->id, tr->score);
+      UartLink::sendScore(tr->id, tr->score, 3);
+
+      tr->have = 0; // ready for next triplet
+    }
+  }
+
+#endif
+
+
+
+
+
+
 
 
 // exact 0..128 -> 0..255
@@ -357,6 +538,87 @@ static inline bool hasUserCharm() {
   return (CFG.userCharmId != 0xFF);  // no unlock check; always show if configured
 }
 
+// Draw the current name/message with the selected effect at X = g_scroll.x
+static void drawNameWithEffect() {
+  const String &storedName = g_scroll.text;  // alias for FX code
+  int16_t scrollX = g_scroll.x;              // alias for FX code
+
+  // baseline: top row; you can tweak Y if you want
+  int16_t xPos = scrollX;
+
+  switch (currentTextEffect) {
+    case EFFECT_SOLID: {
+      // Use the user-defined badge color (seeded in startScroll as g_scroll.color)
+      matrix->setTextColor(g_scroll.color);
+      matrix->setCursor(xPos, 0);
+      matrix->print(storedName);
+    } break;
+
+    case EFFECT_RAINBOW: {
+      int16_t xp = xPos;
+      for (uint8_t i = 0; i < storedName.length(); i++) {
+        char c = storedName.charAt(i);
+        uint8_t hue = (i * 30) + rainbowHue;
+        CRGB color = CHSV(hue, 255, 255);
+        matrix->setTextColor(matrix->Color(color.r, color.g, color.b));
+        matrix->setCursor(xp, 0);
+        matrix->print(c);
+        xp += CHAR_W; // you defined CHAR_W=6
+      }
+      rainbowHue += 3;
+    } break;
+
+    case EFFECT_FIRE: {
+      // fire-ish background flicker
+      for (int i = 0; i < NUM_LEDS; i++) {
+        uint8_t flicker = random8(120);
+        // warm tone; clamp to byte
+        int g = (int)random8(100, 180) - (int)flicker/2;
+        if (g < 0) g = 0;
+        leds[i] = CRGB(127, g/2, 0);
+      }
+      // white text on top
+      matrix->setTextColor(matrix->Color(255, 255, 255));
+      matrix->setCursor(xPos, 0);
+      matrix->print(storedName);
+    } break;
+
+    case EFFECT_GLITCH: {
+      bool burst = (random8() < 10);
+      int xPosGlitch = scrollX;
+      int screenJitterX = burst ? (int)random8(0,3)-1 : 0; // -1..+1
+      int screenJitterY = burst ? (int)random8(0,3)-1 : 0;
+
+      for (uint8_t i = 0; i < storedName.length(); i++) {
+        char c = storedName.charAt(i);
+
+        int xJitter = (random8() < 50) ? (int)random8(0,3)-1 : 0;
+        int yJitter = (random8() < 50) ? (int)random8(0,3)-1 : 0;
+
+        CRGB color;
+        if (burst) {
+          color = CRGB(random8(), random8(), random8());
+        } else if (random8() < 40) {
+          color = CRGB(255, random8(80,255), 255);
+        } else {
+          color = CRGB(180, 200, 255);
+        }
+
+        matrix->setTextColor(matrix->Color(color.r, color.g, color.b));
+        matrix->setCursor(xPosGlitch + xJitter + screenJitterX, yJitter + screenJitterY);
+        matrix->print(c);
+
+        if (random8() < 40) {
+          matrix->setCursor(xPosGlitch + xJitter + ((int)random8(0,3)-1),
+                            yJitter + ((int)random8(0,3)-1));
+          matrix->print(c);
+        }
+
+        xPosGlitch += CHAR_W; // advance 1 char cell
+      }
+    } break;
+  }
+}
 
 
 void startScroll(bool idle, uint8_t msgId = 0, uint8_t reps = 0, uint16_t color = 0) {
@@ -383,16 +645,94 @@ void startScroll(bool idle, uint8_t msgId = 0, uint8_t reps = 0, uint16_t color 
   g_scroll.active = true;
 }
 
+
+// Perceptual helper: brighten shadows (inverse ~2.2 gamma), clamped to [0,255].
+// This is fast enough and avoids a 256-byte LUT in PROGMEM.
+static inline uint8_t gamma_lift_approx(uint8_t v) {
+  // Map 0..255 -> 0..1
+  float x = v / 255.0f;
+  // Inverse-gamma-ish curve to *lift* lows but keep highs similar
+  // y = x^(1/2.2)  ≈ powf(x, 0.4545f)
+  float y = powf(x, 0.4545f);
+  int out = (int)(y * 255.0f + 0.5f);
+  if (out < 0) out = 0; if (out > 255) out = 255;
+  return (uint8_t)out;
+}
+
+//Helper for rounding
+static inline uint8_t keep_nonzero_floor(uint8_t v, bool was_nonzero_in_src) {
+  if (!was_nonzero_in_src) return v; // true black stays black
+  return (v == 0) ? 1 : v;           // keep tiny nonzero values from rounding to 0
+}
+
+
+//Helper for Perceptual Gamma
+static inline void unpack565_with_perceptual(uint16_t c, uint8_t &r8, uint8_t &g8, uint8_t &b8) {
+  uint8_t r5 = (c >> 11) & 0x1F;
+  uint8_t g6 = (c >> 5)  & 0x3F;
+  uint8_t b5 =  c        & 0x1F;
+
+  // Bit replication 5/6 -> 8
+  uint8_t r = (r5 << 3) | (r5 >> 2);
+  uint8_t g = (g6 << 2) | (g6 >> 4);
+  uint8_t b = (b5 << 3) | (b5 >> 2);
+
+  // Perceptual shadow lift
+  r = gamma_lift_approx(r);
+  g = gamma_lift_approx(g);
+  b = gamma_lift_approx(b);
+
+  // Nonzero floor only if source channel was nonzero in 565
+  r = keep_nonzero_floor(r, r5 != 0);
+  g = keep_nonzero_floor(g, g6 != 0);
+  b = keep_nonzero_floor(b, b5 != 0);
+
+  r8 = r; g8 = g; b8 = b;
+}
+
+
 // Draw charm `id` at (x,y) using RGB565 from PROGMEM
 static void drawCharm565(uint8_t id, int16_t x, int16_t y) {
   if (id >= CHARM_COUNT) return;
   const uint16_t* p = charms565[id];
+
   for (uint8_t yy = 0; yy < CHARM_H; ++yy) {
     for (uint8_t xx = 0; xx < CHARM_W; ++xx) {
-      uint16_t c = pgm_read_word(p++);      // 16-bit RGB565
-      matrix->drawPixel(x + xx, y + yy, c); // NeoMatrix takes 565 directly
+      uint16_t c = pgm_read_word(p++);  // RGB565 from PROGMEM
+
+      // Convert with perceptual lift
+      uint8_t r8, g8, b8;
+      unpack565_with_perceptual(c, r8, g8, b8);
+
+      // Draw as 24-bit color to bypass NeoMatrix's internal 565 path
+      matrix->drawPixel(x + xx, y + yy, matrix->Color(r8, g8, b8));
     }
   }
+}
+
+static inline void rgb565ToCRGB(uint16_t c, CRGB &rgb) {
+  // Extract 5:6:5
+  uint8_t r5 = (c >> 11) & 0x1F;
+  uint8_t g6 = (c >> 5)  & 0x3F;
+  uint8_t b5 =  c        & 0x1F;
+
+  // Bit replication (fills the low bits instead of zeros)
+  // r5: 5 -> 8 bits, g6: 6 -> 8 bits, b5: 5 -> 8 bits
+  uint8_t r8 = (r5 << 3) | (r5 >> 2);
+  uint8_t g8 = (g6 << 2) | (g6 >> 4);
+  uint8_t b8 = (b5 << 3) | (b5 >> 2);
+
+  // Perceptual shadow lift so darks don't crush to black
+  r8 = gamma_lift_approx(r8);
+  g8 = gamma_lift_approx(g8);
+  b8 = gamma_lift_approx(b8);
+
+  // If the source channel was nonzero in 565, keep a tiny floor after mapping
+  r8 = keep_nonzero_floor(r8, r5 != 0);
+  g8 = keep_nonzero_floor(g8, g6 != 0);
+  b8 = keep_nonzero_floor(b8, b5 != 0);
+
+  rgb.r = r8; rgb.g = g8; rgb.b = b8;
 }
 
 
@@ -406,82 +746,67 @@ static void renderScrollTick() {
   matrix->setTextSize(1);
   matrix->setTextWrap(false);
 
-  switch (g_textMode) {
-    case TM_SCROLL: {
-      matrix->setTextColor(g_scroll.color);
+  // draw with selected effect
+  drawNameWithEffect();
 
-      // Draw text at current x
-      matrix->setCursor(g_scroll.x, 0);
-      matrix->print(g_scroll.text);
+  // (keep your idle inline icon if desired)
+  if (g_scroll.isIdle && hasUserCharm()) {
+    const int ICON_GAP = 3;
+    const int iconX = g_scroll.x + (int)g_scroll.w + ICON_GAP;
+    drawCharm565(CFG.userCharmId, iconX, 0);
+  }
 
-      // If idle, append the user charm inline so it scrolls together
-      if (g_scroll.isIdle && hasUserCharm()) {
-        const int ICON_GAP = 3;
-        const int iconX = g_scroll.x + (int)g_scroll.w + ICON_GAP;
-        drawCharm565(CFG.userCharmId, iconX, 0);
+  FastLED.show();
+
+  // move & wrap same as before
+  g_scroll.x--;
+  if (g_scroll.x < -(int)g_scroll.contentW) {
+    if (!g_scroll.isIdle) {
+      if (--g_scroll.repeats == 0) {
+        startScroll(true);
+        return;
       }
-
-      FastLED.show();
-
-      // Move left
-      g_scroll.x--;
-
-      // Wrap when all content (text + optional icon) has fully left the screen
-      if (g_scroll.x < -(int)g_scroll.contentW) {
-        if (!g_scroll.isIdle) {
-          if (--g_scroll.repeats == 0) {
-            startScroll(/*idle*/true);
-            break;
-          }
-        }
-        g_scroll.x = WIDTH; // restart same content
-      }
-    } break;
-
-    case TM_BOUNCE: {
-      const int16_t minX = (g_scroll.w > WIDTH) ? -((int16_t)g_scroll.w - WIDTH) : 0;
-      const int16_t maxX = (g_scroll.w > WIDTH) ? 0 : (WIDTH - (int16_t)g_scroll.w);
-
-      matrix->setTextColor(g_scroll.color);
-      matrix->setCursor(boX, 0);
-      matrix->print(g_scroll.text);
-      FastLED.show();
-
-      boX += boDir;
-      if (boX <= minX || boX >= maxX) {
-        boDir = -boDir;
-        if (boX <= minX && !g_scroll.isIdle && --g_scroll.repeats == 0) {
-          startScroll(true);
-          return;
-        }
-      }
-    } break;
-
-    case TM_RAINBOW: {
-      int16_t x = g_scroll.x;
-      for (uint16_t i = 0; i < g_scroll.text.length(); ++i) {
-        CHSV hsv(rbHueBase + i * 8, 255, 255);
-        CRGB rgb; hsv2rgb_rainbow(hsv, rgb);
-        matrix->setTextColor(matrix->Color(rgb.r, rgb.g, rgb.b));
-        matrix->setCursor(x, 0);
-        matrix->print(g_scroll.text[i]);
-        x += CHAR_W;
-      }
-      FastLED.show();
-
-      rbHueBase++;
-      g_scroll.x--;
-      if (g_scroll.x < -(int)g_scroll.w) {
-        if (!g_scroll.isIdle && --g_scroll.repeats == 0) {
-          startScroll(true);
-          return;
-        }
-        g_scroll.x = WIDTH;
-      }
-    } break;
+    }
+    g_scroll.x = WIDTH;
   }
 }
 
+
+// Piecewise-triangular "breathing" without floats/trig.
+// Brightness goes MIN -> MAX -> MIN over SLEEP_PULSE_PERIOD_MS.
+static inline uint8_t sleepPulseValue(uint32_t t) {
+  const uint32_t T = SLEEP_PULSE_PERIOD_MS;
+  const uint32_t half = T >> 1;
+  const uint8_t  lo = SLEEP_PULSE_BRIGHT_MIN;
+  const uint8_t  hi = SLEEP_PULSE_BRIGHT_MAX;
+  if (T == 0 || hi <= lo) return lo;
+
+  t %= T;
+  uint32_t up = (t < half) ? t : (T - t);               // 0..half..0
+  uint32_t span = (uint32_t)(hi - lo);
+  return (uint8_t)(lo + (up * span) / half);
+}
+
+static void sleepPulseTick() {
+  const uint32_t now = millis();
+  if (now - g_sleepPulseLast < SLEEP_PULSE_MS) return;
+  g_sleepPulseLast = now;
+
+  // Draw only one pixel to keep current low.
+  // Color: use badge color at very low brightness.
+  uint8_t b = sleepPulseValue(now);
+  // Convert user's color (CFG.colorRGB) to scaled CRGB
+  uint8_t r=(CFG.colorRGB>>16)&0xFF, g=(CFG.colorRGB>>8)&0xFF, bl=CFG.colorRGB&0xFF;
+  // Scale by b/255
+  r = (uint16_t)r * b / 255;
+  g = (uint16_t)g * b / 255;
+  bl= (uint16_t)bl* b / 255;
+
+  // Clear, draw pixel, show (no other animation while asleep)
+  matrix->fillScreen(0);
+  matrix->drawPixel(SLEEP_PULSE_X, SLEEP_PULSE_Y, matrix->Color(r,g,bl));
+  FastLED.show();
+}
 
 
 // Force a message to start immediately (preempt)
@@ -534,12 +859,13 @@ struct ScenePlayer {
 static inline uint8_t u5to8(uint8_t v){ return (v * 527 + 23) >> 6; }  // 5->8
 static inline uint8_t u6to8(uint8_t v){ return (v * 259 + 33) >> 6; }  // 6->8
 
+/*
 static inline void rgb565ToCRGB(uint16_t c, CRGB &out) {
   out.r = u5to8((c >> 11) & 0x1F);
   out.g = u6to8((c >>  5) & 0x3F);
   out.b = u5to8((c      ) & 0x1F);
 }
-
+*/
 // use the NeoMatrix mapping (don’t write leds[] directly)
 static void drawSceneFrame(const uint16_t* frame565) {
   matrix->fillScreen(0);
@@ -749,40 +1075,223 @@ void testAllCharms() {
   FastLED.show();
 }
 
+// ---- Play scene by numeric ID (startup & IR reuse) ----
+#ifndef STARTUP_SCENE_ID
+#define STARTUP_SCENE_ID 2
+#endif
+
+static void playSceneById(uint8_t sid) {
+  switch (sid) {
+    case 1: // nyan (example)
+      sceneStart(scene_nyan_frames, SCENE_NYAN_FRAMES, SCENE_NYAN_FPS);
+      break;
+
+    case 2: // fuse (startup)
+      sceneStart(scene_fuse_frames, SCENE_FUSE_FRAMES, SCENE_FUSE_FPS);
+      break;
+
+    default:
+      Serial.printf("[SCENE] unknown id %u\n", sid);
+      break;
+  }
+}
+
+
+// ---- Choose which scene+frame to show while asleep ----
+#ifndef SLEEP_SCENE_ID
+#define SLEEP_SCENE_ID 3     // you said "ID 2" (e.g., fuse)
+#endif
+
+#ifndef SLEEP_FRAME_INDEX
+#define SLEEP_FRAME_INDEX 2  // which frame from that scene
+#endif
+
+struct SceneDef {
+  const uint16_t (*frames)[WIDTH*HEIGHT];
+  uint8_t count;
+  uint8_t fps;
+};
+
+// Map numeric IDs to your compiled scenes.
+// If you already have SCENE_*_ID constants, feel free to switch on those.
+static bool getSceneDef(uint8_t sid, SceneDef &out) {
+  switch (sid) {
+    case 1: // nyan
+      out.frames = scene_nyan_frames;
+      out.count  = SCENE_NYAN_FRAMES;
+      out.fps    = SCENE_NYAN_FPS;
+      return true;
+
+    case 2: // fuse
+      out.frames = scene_fuse_frames;
+      out.count  = SCENE_FUSE_FRAMES;
+      out.fps    = SCENE_FUSE_FPS;
+      return true;
+
+          case 3: // kitty
+      out.frames = scene_kitty_frames;
+      out.count  = SCENE_KITTY_FRAMES;
+      out.fps    = SCENE_KITTY_FPS;
+      return true;
+
+    default:
+      return false;
+  }
+}
+
+// Draw a specific frame from a scene (bounds-safe)
+static void drawSceneFrameIndex(uint8_t sid, uint8_t frameIdx) {
+  SceneDef def;
+  if (!getSceneDef(sid, def)) {
+    Serial.printf("[SLEEP] unknown scene id=%u\n", sid);
+    return;
+  }
+  if (def.count == 0) return;
+  uint8_t idx = frameIdx % def.count;              // clamp/wrap safely
+  const uint16_t *frame565 = def.frames[idx];
+
+  matrix->fillScreen(0);
+  for (int y = 0; y < HEIGHT; ++y) {
+    for (int x = 0; x < WIDTH; ++x) {
+      uint16_t c = pgm_read_word(&frame565[y*WIDTH + x]);
+      CRGB rgb; rgb565ToCRGB(c, rgb);
+      matrix->drawPixel(x, y, matrix->Color(rgb.r, rgb.g, rgb.b));
+    }
+  }
+  FastLED.show();
+}
+
+static inline uint8_t sleepBreathValue128(uint32_t t) {
+  const uint32_t T = SLEEP_PULSE_PERIOD_MS;
+  if (!T) return SLEEP_BRIGHT_MIN_128;
+  const uint32_t half = T >> 1;
+  const uint8_t lo = SLEEP_BRIGHT_MIN_128, hi = SLEEP_BRIGHT_MAX_128;
+  if (hi <= lo) return lo;
+  t %= T;
+  uint32_t up = (t < half) ? t : (T - t); // 0..half..0
+  return (uint8_t)(lo + ( (uint32_t)(hi - lo) * up ) / half);
+}
+
+static void sleepBreathTick() {
+  const uint32_t now = millis();
+  if (now - g_sleepBreathLast < 33) return;  // ~30 Hz, cheap
+  g_sleepBreathLast = now;
+
+  uint8_t b128 = sleepBreathValue128(now);
+  FastLED.setBrightness(map128to255(b128));
+  FastLED.show();  // re-latch with new global brightness; pixel data unchanged
+}
+
+static inline void sleepEnter() {
+  if (g_sleep.asleep) return;
+  g_sleep.asleep = true;
+
+  // stop visuals
+  g_scene.active = false;
+  g_fire.active  = false;
+  g_stats.active = false;
+
+  // save user brightness (0..128)
+  g_sleep.savedBrightness128 = CFG.brightness;
+
+  // Draw your chosen sleep frame once
+  drawSceneFrameIndex(SLEEP_SCENE_ID, SLEEP_FRAME_INDEX);
+
+  // Start at min brightness for the breathing effect
+  CFG.brightness = SLEEP_BRIGHT_MIN_128;
+  FastLED.setBrightness(map128to255(CFG.brightness));
+  FastLED.show();
+
+  noTone(MEOW); noTone(PURR);
+  Serial.println("[SLEEP] entered (static scene frame)");
+}
+
+static inline void sleepExit() {
+  if (!g_sleep.asleep) return;
+  g_sleep.asleep = false;
+
+  // restore brightness
+  FastLED.setBrightness(map128to255(g_sleep.savedBrightness128));
+  CFG.brightness = g_sleep.savedBrightness128;
+              
+  sceneStart(scene_kitty_frames, SCENE_KITTY_FRAMES, SCENE_KITTY_FPS);
+
+  // restart idle scroll
+  startScroll(/*idle*/true);
+
+  // reset inactivity timer
+  g_sleep.lastActivityMs = millis();
+
+  Serial.println("[SLEEP] exited");
+}
+
+
+
+
+
 
 static void handleButtons() {
   if (millis() - btnLastMs < 30) return; // debounce
   btnLastMs = millis();
+
+    // If asleep, any button press wakes and consumes the event
+  if (g_sleep.asleep) {
+    if (!digitalRead(BTN1) || !digitalRead(BTN2) || !digitalRead(BTN3)) {
+      sleepExit();
+      // consume this scan; avoid immediate extra actions
+      prevB1 = digitalRead(BTN1);
+      prevB2 = digitalRead(BTN2);
+      prevB3 = digitalRead(BTN3);
+      return;
+    }
+  }
 
   bool b1 = digitalRead(BTN1); // pullup: pressed == LOW
   bool b2 = digitalRead(BTN2);
   bool b3 = digitalRead(BTN3);
 
   if (!b1 && prevB1) {
+    noteActivity();
     // BTN1: Stats view
     statsStart();
     Serial.println("SendStats");
   }
 
   if (!b2 && prevB2) {
-    // BTN2: Fire (send + local FX)
-    //fireAnimStart();
-    sendFireBadge(/*charm=*/0);  // change charm if you want local testing
-    g_score.fires_total++;
+    noteActivity();
+    // BTN2: Fire (send + local FX) — throttled
+    const uint32_t now = millis();
+    if ((now - g_lastFireBtnMs) >= FIRE_MIN_MS) {  // rollover-safe
+      g_lastFireBtnMs = now;
 
-    Serial.println("Send Fire");
+      sendFireBadge(/*charm=*/0);     // change charm if you want local testing
+      g_score.fires_total++;
+
+      Serial.println("Send Fire (allowed)");
+      // optional: a little chirp to confirm allowed press
+      tone(MEOW, 1200, 60);
+    } else {
+      // Throttled feedback (quiet + fast)
+      Serial.println("Send Fire (throttled)");
+      tone(MEOW, 600, 40);
+    }
   }
 
   if (!b3 && prevB3) {
-    g_textMode = static_cast<TextMode>((g_textMode + 1) % TM_MAX);
-    // re-start current text under the new mode so you can see the change right away
-    startScroll(g_scroll.isIdle, /*msgId*/0, g_scroll.repeats, g_scroll.color);
+    noteActivity();
+  currentTextEffect = static_cast<TextEffect>((currentTextEffect + 1) % 4);
+  // restart current text so you see the new effect immediately
+  startScroll(g_scroll.isIdle, /*msgId*/0, g_scroll.repeats, g_scroll.color);
+  Serial.printf("[UI] TextEffect -> %u\n", (unsigned)currentTextEffect);
     Serial.printf("[UI] TextMode -> %u\n", (unsigned)g_textMode);
   }
     prevB1 = b1; prevB2 = b2; prevB3 = b3;
 }
 
 
+
+
+// ---------------- IR handling ----------------
 // ---------------- IR handling ----------------
 void handleIR() {
   if (!IrReceiver.decode()) return;
@@ -793,23 +1302,32 @@ void handleIR() {
     uint8_t  op; uint16_t attacker; uint8_t hi5;
     sirc20Unpack(wLSB, op, attacker, hi5);
 
+    // --- SLEEP GATE: while asleep, only WAKE is honored ---
+    if (g_sleep.asleep) {
+      if (op == 0x02) { // WAKE
+        Serial.println("[IR] WAKE (from sleep)");
+        sleepExit();
+      } // else ignore silently
+      IrReceiver.resume();
+      return;
+    }
+
+    // Awake: any valid IR counts as activity
+    noteActivity();
+
     switch (op) {
       case 0x00: { // FIRE
         uint8_t charm = hi5 & 0x1F;
         Serial.printf("[IR] FIRE attacker=%u charm=%u\n", attacker, charm);
-        g_score.hits_total++;                 // any laser tag hit → Roll 5
+        g_score.hits_total++;
         scoreAwardRoll(5, "hit");
 
-          // Unique badge ID tiers (only if first time seen)
-        bool firstTime = statsAddAttacker(attacker); // your existing unique-bitset
+        // Unique badge ID tiers (only if first time seen)
+        bool firstTime = statsAddAttacker(attacker);
         if (firstTime) {
-          if (attacker >= 300 && attacker <= 400) {
-            scoreAwardRoll(40, "unique badge 300-400");
-          } else if (attacker >= 255 && attacker <= 300) {
-            scoreAwardRoll(20, "unique badge 255-300");
-          } else if (attacker >= 1 && attacker <= 254) {
-            scoreAwardRoll(10, "unique badge 1-254");
-          }
+          if (attacker >= 300 && attacker <= 400)      scoreAwardRoll(40, "unique badge 300-400");
+          else if (attacker >= 255 && attacker <= 300) scoreAwardRoll(20, "unique badge 255-300");
+          else if (attacker >= 1   && attacker <= 254) scoreAwardRoll(10, "unique badge 1-254");
         }
 
         // Charm unlock → if newly unlocked, Roll 20
@@ -829,15 +1347,15 @@ void handleIR() {
       case 0x01: { // SLEEP (value14: minutes 0..127)
         uint8_t minutes = sirc20Value14(wLSB) & 0x7F;
         Serial.printf("[IR] SLEEP %u\n", minutes);
-        // TODO: sleep behavior if you want it here
+        if (minutes != 0) {
+          g_sleep.autoTimeoutMs = (uint32_t)minutes * 60UL * 1000UL;
+        }
+        sleepEnter(); // enter immediately
       } break;
 
       case 0x02: { // WAKE
         Serial.println("[IR] WAKE");
-        g_score.sessions_woke++;
-        scoreAwardRoll(10, "session wake");
-
-        // TODO: wake behavior
+        sleepExit();
       } break;
 
       case 0x03: { // SET_BRIGHTNESS (0..128)
@@ -854,7 +1372,7 @@ void handleIR() {
         uint8_t messageId = (v >> 7) & 0x7F;
         if (scrolls == 0) scrolls = 1;
         Serial.printf("[IR] SHOW_MESSAGE id=%u scrolls=%u\n", messageId, scrolls);
-        onShowMessage(messageId, scrolls); // preempt immediately
+        onShowMessage(messageId, scrolls);
       } break;
 
       case 0x05: { // SPECIAL_SCENE
@@ -863,14 +1381,16 @@ void handleIR() {
         scoreAwardRoll(40, "special scene");
         Serial.printf("[IR] SCENE %u\n", sid);
 
-        // pick the scene by ID
         switch (sid) {
           case SCENE_NYAN_ID:
             sceneStart(scene_nyan_frames, SCENE_NYAN_FRAMES, SCENE_NYAN_FPS);
             break;
-
-          // add more scenes here:
-          // case SCENE_RAIN_ID: sceneStart(scene_rain_frames, SCENE_RAIN_FRAMES, SCENE_RAIN_FPS); break;
+          case SCENE_FUSE_ID:
+            sceneStart(scene_fuse_frames, SCENE_FUSE_FRAMES, SCENE_FUSE_FPS);
+            break;
+          case SCENE_KITTY_ID:
+            sceneStart(scene_kitty_frames, SCENE_KITTY_FRAMES, SCENE_KITTY_FPS);
+            break;
 
           default:
             Serial.println("[SCENE] unknown id");
@@ -878,53 +1398,48 @@ void handleIR() {
         }
       } break;
 
-      case 0x06: {
-       // respect throttle
-      if (!scoreThrottleOk()) {
-        #if 1
-            Serial.println("[SCORE] throttled");
+      case 0x06: { // SCORE REQUEST (respond with triplet)
+        if (!scoreThrottleOk()) {
+          Serial.println("[SCORE] throttled");
+          break;
+        }
+        if (SCORE_RESP_JITTER_MS) delay((uint32_t)random(0, SCORE_RESP_JITTER_MS + 1));
+
+        #ifndef SCORE_TX_DIV
+        #define SCORE_TX_DIV 1
         #endif
-            break;
-          }
-
-          // (optional) tiny jitter so many badges don't transmit at the exact same time
-          if (SCORE_RESP_JITTER_MS) delay((uint32_t)random(0, SCORE_RESP_JITTER_MS + 1));
-          #define SCORE_TX_DIV  1   // set to 10 if you want to transmit “score/10”
-          uint32_t txScore = scoreGet() / SCORE_TX_DIV;
-          if (txScore > 32767) txScore = 32767;  // clamp for 3 parts (5+5+5)
-          
-            //uint16_t score15 = CFG.score & 0x7FFF;   // whatever you compute
-          sendScoreTriplet(CFG.id, txScore);          // your existing robust sender
-        } break;
-
-      case 0x07: {
-        //uint8_t lo5 = hi5 & 0x1F; // payload5 area
-        //Serial.printf("[IR] SCORE_RSP_LO id=%u lo5=%u\n", attacker, lo5);
+        uint32_t txScore = scoreGet() / SCORE_TX_DIV;
+        if (txScore > 32767) txScore = 32767;
+        sendScoreTriplet(CFG.id, (uint16_t)txScore);
       } break;
 
-      case 0x08: {
-        //uint8_t hi5 = hi5 & 0x1F;
-        //Serial.printf("[IR] SCORE_RSP_HI id=%u hi5=%u\n", attacker, hi5);
-      } break;
-
-      case 0x09: {
-        //uint8_t hi5 = hi5 & 0x1F;
-        //Serial.printf("[IR] SCORE_RSP_HI id=%u hi5=%u\n", attacker, hi5);
-      } break;
-
+      case 0x07: // SCORE_RSP_LO
+      case 0x08: // SCORE_RSP_MID
+      case 0x09: // SCORE_RSP_HI
+        // (optional: handle assembling others' scores)
+        break;
 
       default:
+        #ifdef LOUD_SERIAL
         Serial.printf("[IR] Unknown op=0x%02X (wLSB=0x%05lX)\n", op, (unsigned long)wLSB);
+        #endif
         break;
     }
   }
+
   IrReceiver.resume();
 }
 
 // ---------------- Arduino lifecycle ----------------
 void setup() {
-  delay(200);
+  delay(100);
+    vreg_set_voltage(VREG_VOLTAGE_0_90);  // options: 0_85, 0_90, 0_95, 1_00, 1_05, 1_10, 1_15, 1_20, 1_25, 1_30
+    sleep_ms(10);                          // allow voltage to settle
+    set_sys_clock_khz(100000, true);       // now safe to overclock
+
   Serial.begin(115200);
+  watchdog_enable(2000, 1);  // 2s watchdog
+
   pinMode(MEOW, OUTPUT); pinMode(PURR, OUTPUT);
   pinMode(BTN1, INPUT_PULLUP);
   pinMode(BTN2, INPUT_PULLUP);
@@ -950,11 +1465,12 @@ void setup() {
   IrReceiver.begin(IR_RX_PIN, DISABLE_LED_FEEDBACK); // disable LED feedback on RP2040 boards
 
   Serial.printf("[IR] RX on pin %d (SIRC-20)\n", IR_RX_PIN);
-
+  g_sleep.lastActivityMs = millis();
   delay(500);
   //testAllCharms();
   // start idle name scroll
   startScroll(/*idle*/true);
+  playSceneById(STARTUP_SCENE_ID);
     Serial.printf("[BOOT] Build %s %s\n", BUILD_DATE, BUILD_TIME);
 
 }
@@ -964,14 +1480,19 @@ void loop() {
   handleButtons();
 
 
-  if (g_scene.active) {
-    sceneTick();
-  } else if (g_fire.active) {
-    fireAnimRender();
-  } else if (g_stats.active) {
-    statsTick();
+  if (g_sleep.asleep) {
+    // Do not render anything while asleep; still process IR/buttons/serial below.
+      sleepBreathTick();
   } else {
-    renderScrollTick();
+    if (g_scene.active) {
+      sceneTick();
+    } else if (g_fire.active) {
+      fireAnimRender();
+    } else if (g_stats.active) {
+      statsTick();
+    } else {
+      renderScrollTick();
+    }
   }
 
   // fire animation takes over screen; otherwise scroll
@@ -979,6 +1500,13 @@ void loop() {
   //else               renderScrollTick();
 
   handleSerial(); 
+  // Auto-sleep when awake
+  if (!g_sleep.asleep) {
+    if (g_sleep.autoTimeoutMs && (millis() - g_sleep.lastActivityMs >= g_sleep.autoTimeoutMs)) {
+      sleepEnter();
+    }
+  }
   scoreMaybeAutoSave();  // throttle persistent writes
+    watchdog_update();
 }
 // ======================================================================

@@ -40,3 +40,39 @@ bool loadHits(JsonDocument &doc);      // map "attackerId" -> count
 bool saveHits(const JsonDocument &doc);
 
 
+// ---- Sleep pulse config ----
+#ifndef SLEEP_PULSE_MS
+#define SLEEP_PULSE_MS 16UL          // update cadence (~60 Hz)
+#endif
+#ifndef SLEEP_PULSE_PERIOD_MS
+#define SLEEP_PULSE_PERIOD_MS 1800UL // full breathe cycle
+#endif
+#ifndef SLEEP_PULSE_BRIGHT_MIN
+#define SLEEP_PULSE_BRIGHT_MIN 3     // 0..255
+#endif
+#ifndef SLEEP_PULSE_BRIGHT_MAX
+#define SLEEP_PULSE_BRIGHT_MAX 18    // keep tiny to save power
+#endif
+#ifndef SLEEP_PULSE_X
+#define SLEEP_PULSE_X 0              // top-left corner (x,y)
+#endif
+#ifndef SLEEP_PULSE_Y
+#define SLEEP_PULSE_Y 0
+#endif
+
+#ifndef SLEEP_PULSE_PERIOD_MS
+#define SLEEP_PULSE_PERIOD_MS 2000UL   // full up+down cycle
+#endif
+#ifndef SLEEP_BRIGHT_MIN_128
+#define SLEEP_BRIGHT_MIN_128 2         // min brightness (0..128 scale)
+#endif
+#ifndef SLEEP_BRIGHT_MAX_128
+#define SLEEP_BRIGHT_MAX_128 5        // max brightness (0..128 scale)
+#endif
+
+static uint32_t g_sleepBreathLast = 0;
+
+static uint32_t g_sleepPulseLast = 0;
+
+
+
