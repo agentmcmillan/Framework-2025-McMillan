@@ -52,9 +52,9 @@ static inline void blit565ToLeds(const uint16_t *frame565) {
 }
 
 // ----- Fancy text effects -----
-enum TextEffect : uint8_t { EFFECT_SOLID=0, EFFECT_RAINBOW=1, EFFECT_FIRE=2, EFFECT_GLITCH=3, EFFECT_ICE=4, EFFECT_MATRIX=5, EFFECT_FIREWORK=6 };
+enum TextEffect : uint8_t { EFFECT_SOLID=0, EFFECT_RAINBOW=1, EFFECT_FIRE=2, EFFECT_GLITCH=3, EFFECT_ICE=4, EFFECT_MATRIX=5, EFFECT_FIREWORK=6, EFFECT_CHEVRON=7 };
 static TextEffect currentTextEffect = EFFECT_SOLID;
-static uint8_t numberOfEffects = 7;
+static uint8_t numberOfEffects = 8;
 
 // params/state used by effects
 static CRGB textColor = CRGB(255,255,255);  // used by SOLID
@@ -921,6 +921,49 @@ case EFFECT_FIREWORK: {
   matrix->setCursor(xPos, 0);
   matrix->print(storedName);
 } break;
+case EFFECT_CHEVRON: {
+  // 15x7 matrix, columns wired left->right, each column top->bottom.
+  const int COLS = 15;
+  const int ROWS = 7;
+
+  // Self-contained animation state
+  static uint8_t inited = 0;
+  static int8_t  phase  = 0;   // scroll phase
+  static uint8_t tick   = 0;   // frame divider
+
+  if (!inited) { inited = 1; phase = 0; tick = 0; }
+
+  // Stripe geometry: 45° bands (bottom-left → top-right)
+  const int BAND_W = 3;              // colored stripe width
+  const int GAP_W  = 3;              // black gap width
+  const int PERIOD = BAND_W + GAP_W; // full on/off period
+
+  // Reverse direction: decrement phase instead of incrementing
+  tick++;
+  if ((tick & 0x01) == 0) {
+    phase = (int8_t)((phase - 1) % PERIOD);
+    if (phase < 0) phase += PERIOD;
+  }
+
+  // Colors
+  const CRGB ON  = CRGB(32, 0, 160);  // dark purple
+  const CRGB OFF = CRGB(0, 0, 0);     // black
+
+  // Draw angled bands. Lines at 45° satisfy x - y = const.
+  for (int x = 0; x < COLS; x++) {
+    for (int y = 0; y < ROWS; y++) {
+      int m = (x - y + phase) % PERIOD; if (m < 0) m += PERIOD;
+      bool inBand = (m < BAND_W);
+      leds[x * ROWS + y] = inBand ? ON : OFF;
+    }
+  }
+
+  // Bright yellow text on top
+  matrix->setTextColor(matrix->Color(255, 255, 0));
+  matrix->setCursor(xPos, 0);
+  matrix->print(storedName);
+} break;
+
 
 
   }
