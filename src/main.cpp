@@ -1167,6 +1167,10 @@ static void sleepBreathTick() {
 }
 
 static inline void sleepEnter() {
+    if (CFG.sleepDisabled) { 
+    Serial.println("[SLEEP] ignored (disabled)");
+    return; 
+  }
   if (g_sleep.asleep) return;
   g_sleep.asleep = true;
 
@@ -1458,14 +1462,9 @@ void setup() {
   pinMode(BTN3, INPUT_PULLUP);
     // After pinMode(BTN1/2/3, INPUT_PULLUP);
   // If FIRE (BTN2) is held during boot, disable auto-sleep (runtime only)
-  if (digitalRead(BTN2) == LOW) {
-    g_sleep.autoTimeoutMs = 0; // 0 = disabled
-    Serial.println("[BOOT] Sleep disabled (BTN2 held)");
-    // (optional quick chirp)
-    tone(MEOW, 1100, 60);
-    delay(80);
-    tone(MEOW, 1500, 60);
-  }
+  // --- BOOT TOGGLE: hold FIRE to flip sleepDisabled ---
+  delay(50); // settle
+ 
 
   // Seed RNG from jitter
   randomSeed( (uint32_t)micros() ^ (uint32_t)analogRead(A0) ^ (uint32_t)millis() );
@@ -1479,6 +1478,13 @@ void setup() {
   scoreLoad();
   statsLoadAttackers();
 
+  delay(50);
+  if (digitalRead(BTN2) == LOW) {
+    CFG.sleepDisabled = !CFG.sleepDisabled;
+    saveConfig(CFG);
+    Serial.printf("[BOOT] sleepDisabled toggled -> %d\n", (int)CFG.sleepDisabled);
+  }
+
   FastLED.addLeds<CHIPSET, PIXEL_PIN, COLOR_ORDER>(leds, NUM_LEDS);
   FastLED.setMaxPowerInVoltsAndMilliamps(5, 1000);
   FastLED.setBrightness(map128to255(CFG.brightness));
@@ -1488,9 +1494,19 @@ void setup() {
 
   Serial.printf("[IR] RX on pin %d (SIRC-20)\n", IR_RX_PIN);
   g_sleep.lastActivityMs = millis();
-  delay(500);
+  delay(200);
   //testAllCharms();
   // start idle name scroll
+    if (CFG.sleepDisabled) {
+    const uint16_t Y = matrix->Color(255,255,0);
+    matrix->fillScreen(Y); FastLED.show(); delay(250);
+    matrix->fillScreen(0); FastLED.show(); delay(120);
+    matrix->fillScreen(Y); FastLED.show(); delay(250);
+    matrix->fillScreen(0); FastLED.show(); // leave clear for normal startup visuals
+    Serial.println("SLEEP DISABLED");
+
+  }
+
   startScroll(/*idle*/true);
   playSceneById(STARTUP_SCENE_ID);
 
@@ -1524,10 +1540,9 @@ void loop() {
   handleIR();
   handleButtons();
 
-
   if (g_sleep.asleep) {
     // Do not render anything while asleep; still process IR/buttons/serial below.
-      sleepBreathTick();
+    sleepBreathTick();
   } else {
     if (g_scene.active) {
       sceneTick();
@@ -1540,32 +1555,31 @@ void loop() {
     }
   }
 
-  // fire animation takes over screen; otherwise scroll
-  //if (g_fire.active) fireAnimRender();
-  //else               renderScrollTick();
-
   handleSerial(); 
-  // Auto-sleep when awake
+
+  // --- Auto-sleep when awake (gated by persistent CFG.sleepDisabled) ---
   if (!g_sleep.asleep) {
-    if (g_sleep.autoTimeoutMs && (millis() - g_sleep.lastActivityMs >= g_sleep.autoTimeoutMs)) {
+    if (!CFG.sleepDisabled &&
+        g_sleep.autoTimeoutMs &&
+        (uint32_t)(millis() - g_sleep.lastActivityMs) >= g_sleep.autoTimeoutMs) {
       sleepEnter();
     }
   }
+
   scoreMaybeAutoSave();  // throttle persistent writes
 
-  #ifdef SCORE_SNIFFER
+#ifdef SCORE_SNIFFER
   tickRequestTx();
   tripsHousekeep();
   UartLink::poll();
 
   // Heartbeat every 3 seconds
   static uint32_t tHb = 0;
-  if (millis() - tHb > 3000) {
+  if ((uint32_t)(millis() - tHb) > 3000) {
     UartLink::sendHeartbeat(g_reqPeriodMs, uniqueBadgeCount());
     tHb = millis();
   }
-  #endif
-
+#endif
 
   watchdog_update();
 }

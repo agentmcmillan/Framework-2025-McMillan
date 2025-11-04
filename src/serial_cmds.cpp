@@ -70,6 +70,7 @@ static void printStatusJson() {
   doc["colorRGB"]     = CFG.colorRGB;
   doc["unlockedMask"] = CFG.unlockedMask;
   doc["userCharmId"]  = CFG.userCharmId;  // 0..31, or 255 for none
+  doc["sleepDisabled"] = CFG.sleepDisabled;   // <-- NEW
   serializeJson(doc, Serial);
   Serial.println();
 }
@@ -165,6 +166,8 @@ static void cmd_HELP() {
   Serial.println(F("  MSG ADD <id> <text>"));
   Serial.println(F("  MSG DEL <id>"));
   Serial.println(F("  PING"));
+  Serial.println(F("  SET SLEEP_DISABLED=<0|1>"));
+  Serial.println(F("  SET SLEEP=<ENABLE|DISABLE>"));
 }
 
 void handleSerial() {
@@ -323,7 +326,29 @@ void handleSerial() {
         }
         continue;
       }
+      if (AU.startsWith("SLEEP_DISABLED=")) {
+          int v = a.substring(15).toInt();
+          CFG.sleepDisabled = (v != 0);
+          saveConfig(CFG);
+          Serial.printf("OK SLEEP_DISABLED -> %d\n", (int)CFG.sleepDisabled);
+          continue;
+        }
 
+        // Friendly alias: SET SLEEP=ENABLE|DISABLE
+        if (AU.startsWith("SLEEP=")) {
+          String v = a.substring(6); v.trim(); v.toUpperCase();
+          if (v == "ENABLE") {
+            CFG.sleepDisabled = false;
+          } else if (v == "DISABLE") {
+            CFG.sleepDisabled = true;
+          } else {
+            Serial.println("ERR SLEEP expects ENABLE or DISABLE");
+            continue;
+          }
+          saveConfig(CFG);
+          Serial.printf("OK SLEEP -> %s\n", CFG.sleepDisabled ? "DISABLED" : "ENABLED");
+          continue;
+        }
       // SET LOCK CHARM=K
       if (AU.startsWith("LOCK CHARM=")) {
         int k = a.substring(11).toInt();
