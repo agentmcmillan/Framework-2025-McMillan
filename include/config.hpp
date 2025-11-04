@@ -11,7 +11,7 @@ static uint32_t g_lastFireBtnMs = 0;   // last time we allowed a local FIRE
 
 // ---- Sleep/Wake ----
 #ifndef AUTO_SLEEP_MINUTES_DEFAULT
-#define AUTO_SLEEP_MINUTES_DEFAULT 30   // auto-sleep after 30 min of inactivity
+#define AUTO_SLEEP_MINUTES_DEFAULT 15   // auto-sleep after 30 min of inactivity
 #endif
 
 
@@ -73,13 +73,13 @@ bool saveHits(const JsonDocument &doc);
 #define SLEEP_PULSE_MS 16UL          // update cadence (~60 Hz)
 #endif
 #ifndef SLEEP_PULSE_PERIOD_MS
-#define SLEEP_PULSE_PERIOD_MS 1800UL // full breathe cycle
+#define SLEEP_PULSE_PERIOD_MS 4000UL // full breathe cycle
 #endif
 #ifndef SLEEP_PULSE_BRIGHT_MIN
-#define SLEEP_PULSE_BRIGHT_MIN 3     // 0..255
+#define SLEEP_PULSE_BRIGHT_MIN 1     // 0..255
 #endif
 #ifndef SLEEP_PULSE_BRIGHT_MAX
-#define SLEEP_PULSE_BRIGHT_MAX 18    // keep tiny to save power
+#define SLEEP_PULSE_BRIGHT_MAX 4    // keep tiny to save power
 #endif
 #ifndef SLEEP_PULSE_X
 #define SLEEP_PULSE_X 0              // top-left corner (x,y)
@@ -88,14 +88,11 @@ bool saveHits(const JsonDocument &doc);
 #define SLEEP_PULSE_Y 0
 #endif
 
-#ifndef SLEEP_PULSE_PERIOD_MS
-#define SLEEP_PULSE_PERIOD_MS 2000UL   // full up+down cycle
-#endif
 #ifndef SLEEP_BRIGHT_MIN_128
-#define SLEEP_BRIGHT_MIN_128 2         // min brightness (0..128 scale)
+#define SLEEP_BRIGHT_MIN_128 1         // min brightness (0..128 scale)
 #endif
 #ifndef SLEEP_BRIGHT_MAX_128
-#define SLEEP_BRIGHT_MAX_128 5        // max brightness (0..128 scale)
+#define SLEEP_BRIGHT_MAX_128 4       // max brightness (0..128 scale)
 #endif
 
 static uint32_t g_sleepBreathLast = 0;

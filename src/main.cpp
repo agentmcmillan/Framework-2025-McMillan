@@ -704,36 +704,30 @@ static void renderScrollTick() {
 
   switch (g_textMode) {
     case TM_SCROLL: {
-      matrix->setTextColor(g_scroll.color);
+  // was:
+  // matrix->setTextColor(g_scroll.color);
+  // matrix->setCursor(g_scroll.x, 0);
+  // matrix->print(g_scroll.text);
 
-      // Draw text at current x
-      matrix->setCursor(g_scroll.x, 0);
-      matrix->print(g_scroll.text);
+  // now:
+  drawNameWithEffect(); // uses g_scroll.text and g_scroll.x
 
-      // If idle, append the user charm inline so it scrolls together
-      if (g_scroll.isIdle && hasUserCharm()) {
-        const int ICON_GAP = 3;
-        const int iconX = g_scroll.x + (int)g_scroll.w + ICON_GAP;
-        drawCharm565(CFG.userCharmId, iconX, 0);
-      }
+  // keep the inline charm
+  if (g_scroll.isIdle && hasUserCharm()) {
+    const int ICON_GAP = 3;
+    const int iconX = g_scroll.x + (int)g_scroll.w + ICON_GAP;
+    drawCharm565(CFG.userCharmId, iconX, 0);
+  }
 
-      FastLED.show();
-
-      // Move left
-      g_scroll.x--;
-
-      // Wrap when all content (text + optional icon) has fully left the screen
-      if (g_scroll.x < -(int)g_scroll.contentW) {
-        if (!g_scroll.isIdle) {
-          if (--g_scroll.repeats == 0) {
-            startScroll(/*idle*/true);
-            break;
-          }
-        }
-        g_scroll.x = WIDTH; // restart same content
-      }
-    } break;
-
+  FastLED.show();
+  g_scroll.x--;
+  if (g_scroll.x < -(int)g_scroll.contentW) {
+    if (!g_scroll.isIdle) {
+      if (--g_scroll.repeats == 0) { startScroll(true); break; }
+    }
+    g_scroll.x = WIDTH;
+  }
+} break;
     case TM_BOUNCE: {
       const int16_t minX = (g_scroll.w > WIDTH) ? -((int16_t)g_scroll.w - WIDTH) : 0;
       const int16_t maxX = (g_scroll.w > WIDTH) ? 0 : (WIDTH - (int16_t)g_scroll.w);
@@ -994,7 +988,7 @@ static void statsTick() {
       matrix->setFont(NULL);
       matrix->setTextSize(1);
       matrix->setTextWrap(false);
-      matrix->setTextColor(matrix->Color(255, 255, 255));
+      matrix->setTextColor(matrix->Color(190, 190, 190));
 
       // draw the text
       matrix->setCursor(g_stats.scX, 0);
@@ -1511,6 +1505,21 @@ void loop() {
     }
   }
   scoreMaybeAutoSave();  // throttle persistent writes
-    watchdog_update();
+
+  #ifdef SCORE_SNIFFER
+  tickRequestTx();
+  tripsHousekeep();
+  UartLink::poll();
+
+  // Heartbeat every 3 seconds
+  static uint32_t tHb = 0;
+  if (millis() - tHb > 3000) {
+    UartLink::sendHeartbeat(g_reqPeriodMs, uniqueBadgeCount());
+    tHb = millis();
+  }
+  #endif
+
+
+  watchdog_update();
 }
 // ======================================================================
