@@ -448,6 +448,15 @@ static void sendScoreTriplet(uint16_t myId, uint16_t score15) {
   }
 }
 
+// Pack an op with a 14-bit payload (used by SPECIAL_SCENE, etc.)
+static inline uint32_t sirc20Value(uint8_t op, uint16_t value14) {
+  uint16_t low9 = (value14 & 0x01FF);
+  uint8_t  hi5  = (value14 >> 9) & 0x1F;
+  return (uint32_t(op & 0x3F))
+       | (uint32_t(low9) << 6)
+       | (uint32_t(hi5)  << 15);
+}
+
 // ---------------- Simple message system ----------------
 static const uint8_t CHAR_W = 6;     // 5x7 font + 1px gap
 static const uint16_t SCROLL_MS = 80;
@@ -1234,24 +1243,42 @@ static void handleButtons() {
 
   if (!b2 && prevB2) {
     noteActivity();
-    // BTN2: Fire (send + local FX) — throttled
+
     const uint32_t now = millis();
-    if ((now - g_lastFireBtnMs) >= FIRE_MIN_MS) {  // rollover-safe
-      g_lastFireBtnMs = now;
-
-      sendFireBadge(/*charm=*/0);     // change charm if you want local testing
-      g_score.fires_total++;
-
-      Serial.println("Send Fire (allowed)");
-      // optional: a little chirp to confirm allowed press
-      tone(MEOW, 1200, 60);
-    } else {
-      // Throttled feedback (quiet + fast)
+    const bool allowed = ((now - g_lastFireBtnMs) >= FIRE_MIN_MS); // you already use this
+    if (!allowed) {
       Serial.println("Send Fire (throttled)");
       tone(MEOW, 600, 40);
+      prevB1 = b1; prevB2 = b2; prevB3 = b3;
+      return;
+    }
+    g_lastFireBtnMs = now;
+
+    // Modifier combos:
+    //  - Hold BTN1 while pressing FIRE => SPECIAL_SCENE 1
+    //  - Hold BTN3 while pressing FIRE => SPECIAL_SCENE 2
+    if (!b1) {
+      // BTN1 held
+      uint32_t frame = sirc20Value(/*op*/0x05, /*sceneId*/1);
+      sendSirc20(frame, "SCENE1");
+      Serial.println("[UI] BTN1+FIRE -> SPECIAL_SCENE 1");
+      tone(MEOW, 1400, 70);
+      tone(PURR, 180,  70);
+    } else if (!b3) {
+      // BTN3 held
+      uint32_t frame = sirc20Value(/*op*/0x05, /*sceneId*/2);
+      sendSirc20(frame, "SCENE2");
+      Serial.println("[UI] BTN3+FIRE -> SPECIAL_SCENE 2");
+      tone(MEOW, 1600, 70);
+      tone(PURR, 220,  70);
+    } else {
+      // Plain FIRE
+      sendFireBadge(/*charm=*/0);   // uses CFG.userCharmId already
+      g_score.fires_total++;
+      Serial.println("Send Fire");
     }
   }
-
+  
   if (!b3 && prevB3) {
     noteActivity();
   currentTextEffect = static_cast<TextEffect>((currentTextEffect + 1) % 4);
@@ -1419,6 +1446,16 @@ void setup() {
   pinMode(BTN1, INPUT_PULLUP);
   pinMode(BTN2, INPUT_PULLUP);
   pinMode(BTN3, INPUT_PULLUP);
+    // After pinMode(BTN1/2/3, INPUT_PULLUP);
+  // If FIRE (BTN2) is held during boot, disable auto-sleep (runtime only)
+  if (digitalRead(BTN2) == LOW) {
+    g_sleep.autoTimeoutMs = 0; // 0 = disabled
+    Serial.println("[BOOT] Sleep disabled (BTN2 held)");
+    // (optional quick chirp)
+    tone(MEOW, 1100, 60);
+    delay(80);
+    tone(MEOW, 1500, 60);
+  }
 
   // Seed RNG from jitter
   randomSeed( (uint32_t)micros() ^ (uint32_t)analogRead(A0) ^ (uint32_t)millis() );
