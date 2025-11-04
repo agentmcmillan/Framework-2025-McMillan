@@ -1245,7 +1245,7 @@ static void handleButtons() {
     noteActivity();
 
     const uint32_t now = millis();
-    const bool allowed = ((now - g_lastFireBtnMs) >= FIRE_MIN_MS); // you already use this
+    const bool allowed = ((now - g_lastFireBtnMs) >= FIRE_MIN_MS);
     if (!allowed) {
       Serial.println("Send Fire (throttled)");
       tone(MEOW, 600, 40);
@@ -1254,31 +1254,41 @@ static void handleButtons() {
     }
     g_lastFireBtnMs = now;
 
-    // Modifier combos:
-    //  - Hold BTN1 while pressing FIRE => SPECIAL_SCENE 1
-    //  - Hold BTN3 while pressing FIRE => SPECIAL_SCENE 2
-    if (!b1) {
-      // BTN1 held
+    // --- NEW priority: BOTH BTN1+BTN3 held -> SPECIAL MESSAGE 1 ---
+    if (!b1 && !b3) {
+      const uint8_t messageId = 1;
+      const uint8_t scrolls   = 1;  // tweak if you want more passes
+      const uint16_t value14  = ((messageId & 0x7F) << 7) | (scrolls & 0x7F);
+      uint32_t frame = sirc20Value(/*op*/0x04, value14); // SHOW_MESSAGE
+      sendSirc20(frame, "SHOW_MESSAGE 1");
+      Serial.println("[UI] BTN1+BTN3+FIRE -> SHOW_MESSAGE 1");
+      tone(MEOW, 1800, 70);
+      tone(PURR, 240,  70);
+    }
+    // BTN1 held -> SPECIAL_SCENE 1
+    else if (!b1) {
       uint32_t frame = sirc20Value(/*op*/0x05, /*sceneId*/1);
       sendSirc20(frame, "SCENE1");
       Serial.println("[UI] BTN1+FIRE -> SPECIAL_SCENE 1");
       tone(MEOW, 1400, 70);
       tone(PURR, 180,  70);
-    } else if (!b3) {
-      // BTN3 held
+    }
+    // BTN3 held -> SPECIAL_SCENE 2
+    else if (!b3) {
       uint32_t frame = sirc20Value(/*op*/0x05, /*sceneId*/2);
       sendSirc20(frame, "SCENE2");
       Serial.println("[UI] BTN3+FIRE -> SPECIAL_SCENE 2");
       tone(MEOW, 1600, 70);
       tone(PURR, 220,  70);
-    } else {
-      // Plain FIRE
-      sendFireBadge(/*charm=*/0);   // uses CFG.userCharmId already
+    }
+    // Plain FIRE
+    else {
+      sendFireBadge(/*charm=*/0);
       g_score.fires_total++;
       Serial.println("Send Fire");
     }
   }
-  
+
   if (!b3 && prevB3) {
     noteActivity();
   currentTextEffect = static_cast<TextEffect>((currentTextEffect + 1) % 4);
