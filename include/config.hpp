@@ -2,11 +2,27 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
-// ---- Pins (adjust to your board) ----
-#define PIXEL_PIN       4
-#define IR_RX_PIN       27
-#define MEOW            23
-#define PURR            24
+
+#ifndef FIRE_MIN_MS
+#define FIRE_MIN_MS 5000UL   // 5 seconds between local FIREs
+#endif
+static uint32_t g_lastFireBtnMs = 0;   // last time we allowed a local FIRE
+
+
+// ---- Sleep/Wake ----
+#ifndef AUTO_SLEEP_MINUTES_DEFAULT
+#define AUTO_SLEEP_MINUTES_DEFAULT 30   // auto-sleep after 30 min of inactivity
+#endif
+
+
+
+
+// ---------------- Pins / Matrix ----------------
+#define PIXEL_PIN   4
+#define IR_RX_PIN   27
+#define IR_TX_PIN   3
+#define MEOW        23
+#define PURR        24
 
 #define BTN1 5
 #define BTN2 6
@@ -15,8 +31,20 @@
 #define WIDTH  15
 #define HEIGHT 7
 #define NUM_LEDS (WIDTH*HEIGHT)
+
 #define COLOR_ORDER GRB
 #define CHIPSET WS2812
+
+// Use the same struct the generator writes:
+//#ifndef SCN_W
+#define SCN_W 15
+#define SCN_H 7
+#define SCN_PIX (SCN_W*SCN_H)
+
+// spacing between text and first icon, and between icons
+#define TEXT_ICON_GAP  3
+#define ICON_SPACING   1
+
 
 static int16_t nsX = WIDTH;   // scroller X
 

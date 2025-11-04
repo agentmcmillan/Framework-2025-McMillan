@@ -30,46 +30,6 @@ extern "C" {
 
 
 
-// ---------------- Pins / Matrix ----------------
-#define PIXEL_PIN   4
-#define IR_RX_PIN   27
-#define IR_TX_PIN   3
-#define MEOW        23
-#define PURR        24
-
-#define WIDTH   15
-#define HEIGHT   7
-#define NUM_LEDS (WIDTH*HEIGHT)
-
-#define CHIPSET     WS2812
-#define COLOR_ORDER GRB
-
-// Use the same struct the generator writes:
-//#ifndef SCN_W
-#define SCN_W 15
-#define SCN_H 7
-#define SCN_PIX (SCN_W*SCN_H)
-
-// spacing between text and first icon, and between icons
-#define TEXT_ICON_GAP  3
-#define ICON_SPACING   1
-
-
-#ifndef FIRE_MIN_MS
-#define FIRE_MIN_MS 5000UL   // 5 seconds between local FIREs
-#endif
-static uint32_t g_lastFireBtnMs = 0;   // last time we allowed a local FIRE
-
-
-
-//#endif
-
-// ---- Sleep/Wake ----
-#ifndef AUTO_SLEEP_MINUTES_DEFAULT
-#define AUTO_SLEEP_MINUTES_DEFAULT 30   // auto-sleep after 30 min of inactivity
-#endif
-
-
 
 static uint32_t btnLastMs = 0;
 static bool prevB1 = true, prevB2 = true, prevB3 = true;
@@ -362,10 +322,6 @@ static inline void noteActivity() {
   }
 
 #endif
-
-
-
-
 
 
 
@@ -746,31 +702,81 @@ static void renderScrollTick() {
   matrix->setTextSize(1);
   matrix->setTextWrap(false);
 
-  // draw with selected effect
-  drawNameWithEffect();
+  switch (g_textMode) {
+    case TM_SCROLL: {
+      matrix->setTextColor(g_scroll.color);
 
-  // (keep your idle inline icon if desired)
-  if (g_scroll.isIdle && hasUserCharm()) {
-    const int ICON_GAP = 3;
-    const int iconX = g_scroll.x + (int)g_scroll.w + ICON_GAP;
-    drawCharm565(CFG.userCharmId, iconX, 0);
-  }
+      // Draw text at current x
+      matrix->setCursor(g_scroll.x, 0);
+      matrix->print(g_scroll.text);
 
-  FastLED.show();
-
-  // move & wrap same as before
-  g_scroll.x--;
-  if (g_scroll.x < -(int)g_scroll.contentW) {
-    if (!g_scroll.isIdle) {
-      if (--g_scroll.repeats == 0) {
-        startScroll(true);
-        return;
+      // If idle, append the user charm inline so it scrolls together
+      if (g_scroll.isIdle && hasUserCharm()) {
+        const int ICON_GAP = 3;
+        const int iconX = g_scroll.x + (int)g_scroll.w + ICON_GAP;
+        drawCharm565(CFG.userCharmId, iconX, 0);
       }
-    }
-    g_scroll.x = WIDTH;
+
+      FastLED.show();
+
+      // Move left
+      g_scroll.x--;
+
+      // Wrap when all content (text + optional icon) has fully left the screen
+      if (g_scroll.x < -(int)g_scroll.contentW) {
+        if (!g_scroll.isIdle) {
+          if (--g_scroll.repeats == 0) {
+            startScroll(/*idle*/true);
+            break;
+          }
+        }
+        g_scroll.x = WIDTH; // restart same content
+      }
+    } break;
+
+    case TM_BOUNCE: {
+      const int16_t minX = (g_scroll.w > WIDTH) ? -((int16_t)g_scroll.w - WIDTH) : 0;
+      const int16_t maxX = (g_scroll.w > WIDTH) ? 0 : (WIDTH - (int16_t)g_scroll.w);
+
+      matrix->setTextColor(g_scroll.color);
+      matrix->setCursor(boX, 0);
+      matrix->print(g_scroll.text);
+      FastLED.show();
+
+      boX += boDir;
+      if (boX <= minX || boX >= maxX) {
+        boDir = -boDir;
+        if (boX <= minX && !g_scroll.isIdle && --g_scroll.repeats == 0) {
+          startScroll(true);
+          return;
+        }
+      }
+    } break;
+
+    case TM_RAINBOW: {
+      int16_t x = g_scroll.x;
+      for (uint16_t i = 0; i < g_scroll.text.length(); ++i) {
+        CHSV hsv(rbHueBase + i * 8, 255, 255);
+        CRGB rgb; hsv2rgb_rainbow(hsv, rgb);
+        matrix->setTextColor(matrix->Color(rgb.r, rgb.g, rgb.b));
+        matrix->setCursor(x, 0);
+        matrix->print(g_scroll.text[i]);
+        x += CHAR_W;
+      }
+      FastLED.show();
+
+      rbHueBase++;
+      g_scroll.x--;
+      if (g_scroll.x < -(int)g_scroll.w) {
+        if (!g_scroll.isIdle && --g_scroll.repeats == 0) {
+          startScroll(true);
+          return;
+        }
+        g_scroll.x = WIDTH;
+      }
+    } break;
   }
 }
-
 
 // Piecewise-triangular "breathing" without floats/trig.
 // Brightness goes MIN -> MAX -> MIN over SLEEP_PULSE_PERIOD_MS.
@@ -816,25 +822,6 @@ static void onShowMessage(uint8_t msgId, uint8_t scrolls) {
 }
 
 
-/*
-// Draw charm `id` at top-left (x,y). Assumes your matrix origin is top-left.
-void drawCharm(uint8_t id, int16_t x, int16_t y) {
-  if (id >= CHARM_COUNT) return;
-  const uint16_t* p = charms565[id];
-  for (uint8_t yy=0; yy<CHARM_H; ++yy) {
-    for (uint8_t xx=0; xx<CHARM_W; ++xx) {
-      uint8_t r = pgm_read_byte(p++),
-              g = pgm_read_byte(p++),
-              b = pgm_read_byte(p++);
-      matrix->drawPixel(x + xx, y + yy, matrix->Color(r,g,b));
-    }
-  }
-  FastLED.show();
-}
-*/
-
-
-
 
 static inline void drawUserCharmOverlay() {
   if (hasUserCharm()) {
@@ -859,13 +846,7 @@ struct ScenePlayer {
 static inline uint8_t u5to8(uint8_t v){ return (v * 527 + 23) >> 6; }  // 5->8
 static inline uint8_t u6to8(uint8_t v){ return (v * 259 + 33) >> 6; }  // 6->8
 
-/*
-static inline void rgb565ToCRGB(uint16_t c, CRGB &out) {
-  out.r = u5to8((c >> 11) & 0x1F);
-  out.g = u6to8((c >>  5) & 0x3F);
-  out.b = u5to8((c      ) & 0x1F);
-}
-*/
+
 // use the NeoMatrix mapping (don’t write leds[] directly)
 static void drawSceneFrame(const uint16_t* frame565) {
   matrix->fillScreen(0);
@@ -1035,7 +1016,7 @@ static void statsTick() {
       if (g_stats.scX < -(int)g_stats.contentW) {
         g_stats.scX = WIDTH;
         g_stats.loops++;
-        if (g_stats.loops >= 2) {   // after 2 full passes, go to charms slideshow
+        if (g_stats.loops >= 1) {   // after 2 full passes, go to charms slideshow
           g_stats.phase = 1;
           g_stats.t0 = now;
         }
@@ -1471,6 +1452,29 @@ void setup() {
   // start idle name scroll
   startScroll(/*idle*/true);
   playSceneById(STARTUP_SCENE_ID);
+
+
+  #ifdef SCORE_SNIFFER
+    tripsInit();
+      // Bring up UART link to ESP32-S3
+    UartLink::init(230400);
+
+    // Allow ESP to adjust request interval at runtime:
+    UartLink::onCommand([](const String& line){
+      // Expect JSON like: {"t":"set","req_ms":800}
+      int p = line.indexOf("\"req_ms\"");
+      if (p >= 0) {
+        p = line.indexOf(':', p);
+        if (p >= 0) {
+          uint32_t v = (uint32_t) line.substring(p+1).toInt();
+          v = constrain(v, 200u, 5000u);
+          g_reqPeriodMs = (uint16_t)v;
+          UartLink::logf("info", "req_ms set -> %u", g_reqPeriodMs);
+        }
+      }
+    });
+    #endif
+
     Serial.printf("[BOOT] Build %s %s\n", BUILD_DATE, BUILD_TIME);
 
 }
