@@ -52,9 +52,9 @@ static inline void blit565ToLeds(const uint16_t *frame565) {
 }
 
 // ----- Fancy text effects -----
-enum TextEffect : uint8_t { EFFECT_SOLID=0, EFFECT_RAINBOW=1, EFFECT_FIRE=2, EFFECT_GLITCH=3, EFFECT_ICE=4, };
+enum TextEffect : uint8_t { EFFECT_SOLID=0, EFFECT_RAINBOW=1, EFFECT_FIRE=2, EFFECT_GLITCH=3, EFFECT_ICE=4, EFFECT_MATRIX=5, };
 static TextEffect currentTextEffect = EFFECT_SOLID;
-static uint8_t numberOfEffects = 5;
+static uint8_t numberOfEffects = 6;
 
 // params/state used by effects
 static CRGB textColor = CRGB(255,255,255);  // used by SOLID
@@ -598,6 +598,97 @@ static void drawNameWithEffect() {
 
   // cyan text on top
   matrix->setTextColor(matrix->Color(0, 255, 255));
+  matrix->setCursor(xPos, 0);
+  matrix->print(storedName);
+} break;
+case EFFECT_MATRIX: {
+  // "Green matrix rain" with variable tails (min 1, max 7 requested).
+  // Wiring: 15 columns × 7 rows, each column top->bottom, left->right.
+  const int COLS = 15;
+  const int ROWS = 7;
+
+  // Persistent per-column state (self-contained; no external vars/helpers)
+  static bool     inited = false;
+  static uint8_t  y[COLS];         // head row per column
+  static uint8_t  speed[COLS];     // frames-per-step for each column (2..5)
+  static uint8_t  tailLen[COLS];   // desired tail length per column (1..7)
+  static uint8_t  tick = 0;        // frame counter
+
+  if (!inited) {
+    for (int c = 0; c < COLS; c++) {
+      y[c] = random8(ROWS);
+      speed[c] = random8(2, 6);              // 2..5
+      if (speed[c] < 2) speed[c] = 2;
+      tailLen[c] = random8(1, 8);            // 1..7 (requested range)
+    }
+    inited = true;
+  }
+
+  // Gentle fade to create motion persistence without helpers
+  for (int i = 0; i < NUM_LEDS; i++) {
+    int r = leds[i].r - 6;   if (r < 0) r = 0;
+    int g = leds[i].g - 14;  if (g < 0) g = 0;   // slightly stronger green fade
+    int b = leds[i].b - 6;   if (b < 0) b = 0;
+    leds[i] = CRGB(r, g, b);
+  }
+
+  // Update heads, occasionally re-randomize speed and tail length
+  for (int c = 0; c < COLS; c++) {
+    if ((tick % speed[c]) == 0) {
+      y[c] = (uint8_t)((y[c] + 1) % ROWS);
+      if (y[c] == 0 && random8() < 96) {    // ~37.5% chance to vary column cadence
+        speed[c] = random8(2, 6);
+        if (speed[c] < 2) speed[c] = 2;
+        tailLen[c] = random8(1, 8);         // 1..7 (requested range)
+      }
+    }
+  }
+
+  // Draw heads and tails
+  for (int c = 0; c < COLS; c++) {
+    // Head brightness: strong but not neon
+    int gHead = (int)random8(150, 210);
+    int headIdx = c * ROWS + y[c];
+    leds[headIdx] = CRGB(0, gHead, 0);
+
+    // Effective tail length cannot exceed ROWS-1 to avoid overlapping the head on a 7-row panel.
+    uint8_t Lreq = tailLen[c];              // 1..7
+    uint8_t L    = Lreq;
+    if (L >= ROWS) L = ROWS - 1;            // clamp to 6 on a 7-row matrix
+
+    // Global attenuation vs. requested tail length (longer overall ⇒ dimmer segments).
+    // Map Lreq=1..7 roughly to 0.85..0.35 (percent scaled ×100).
+    int atten_num = 85 - 8 * Lreq;          // 85,77,69,61,53,45,37
+    if (atten_num < 35) atten_num = 35;
+
+    // Tail segments above the head, wrapping upward; brightness falls with distance.
+    for (uint8_t k = 1; k <= L; k++) {
+      // Distance falloff: segFactor ≈ (L - k + 1)/(L + 1)
+      int seg_num = (int)(L - k + 1) * 100;
+      int seg_den = (int)(L + 1);
+      int segFactorPct = (seg_num / seg_den);       // 0..100 (approx)
+
+      // Combine: tail = head * atten * segFactor
+      int gTail = (gHead * atten_num * segFactorPct) / (100 * 100);
+
+      // Compute wrapped row above head
+      int row = y[c] - k;
+      while (row < 0) row += ROWS;
+      int idx = c * ROWS + row;
+
+      // Additive blend to preserve visibility
+      int gExisting = leds[idx].g;
+      int gNew = gExisting + gTail;
+      if (gNew > 255) gNew = 255;
+
+      leds[idx] = CRGB(0, gNew, 0);
+    }
+  }
+
+  tick++;
+
+  // White text over the rain
+  matrix->setTextColor(matrix->Color(255, 255, 255));
   matrix->setCursor(xPos, 0);
   matrix->print(storedName);
 } break;
