@@ -52,9 +52,9 @@ static inline void blit565ToLeds(const uint16_t *frame565) {
 }
 
 // ----- Fancy text effects -----
-enum TextEffect : uint8_t { EFFECT_SOLID=0, EFFECT_RAINBOW=1, EFFECT_FIRE=2, EFFECT_GLITCH=3, EFFECT_ICE=4, EFFECT_MATRIX=5, };
+enum TextEffect : uint8_t { EFFECT_SOLID=0, EFFECT_RAINBOW=1, EFFECT_FIRE=2, EFFECT_GLITCH=3, EFFECT_ICE=4, EFFECT_MATRIX=5, EFFECT_FIREWORK=6 };
 static TextEffect currentTextEffect = EFFECT_SOLID;
-static uint8_t numberOfEffects = 6;
+static uint8_t numberOfEffects = 7;
 
 // params/state used by effects
 static CRGB textColor = CRGB(255,255,255);  // used by SOLID
@@ -589,9 +589,9 @@ static void drawNameWithEffect() {
     uint8_t flicker = random8(120);
 
     // cool tone; clamp to byte
-    int r = (int)random8(0, 64)   - (int)flicker / 8;  if (r < 0) r = 0;       // slight red for purple tint
-    int g = (int)random8(0, 24)   - (int)flicker / 6;  if (g < 0) g = 0;       // keep green very low
-    int b = (int)random8(160,255) - (int)flicker / 2;  if (b < 0) b = 0;       // dominant blue, flickers darker
+    int r = (int)random8(0, 24)   - (int)flicker / 8;  if (r < 0) r = 0;       // slight red for purple tint
+    int g = (int)random8(0, 8)   - (int)flicker / 6;  if (g < 0) g = 0;       // keep green very low
+    int b = (int)random8(120,170) - (int)flicker / 2;  if (b < 0) b = 0;       // dominant blue, flickers darker
 
     leds[i] = CRGB(r, g, b);
   }
@@ -692,6 +692,237 @@ case EFFECT_MATRIX: {
   matrix->setCursor(xPos, 0);
   matrix->print(storedName);
 } break;
+case EFFECT_FIREWORK: {
+  // 15x7 panel, columns wired left->right, each column top->bottom.
+  const int COLS = 15;
+  const int ROWS = 7;
+  const uint8_t MAX_FW = 3;     // keep max 3 on screen, but allow multi-spawn salvos
+
+  // States: 0=idle, 1=ascending, 2=expanding (bright), 3=fading (at max size)
+  static bool     inited = false;
+  static uint8_t  state[MAX_FW];
+  static int8_t   cx[MAX_FW], cy[MAX_FW];   // current center / head
+  static int8_t   tgtY[MAX_FW];             // explosion trigger row (upper half 0..3)
+  static uint8_t  riseTick[MAX_FW];         // frames-per-step for ascent (1..3)
+  static uint8_t  risePhase[MAX_FW];
+  static uint8_t  rC[MAX_FW], gC[MAX_FW], bC[MAX_FW]; // base bright color
+  static uint8_t  radius[MAX_FW];           // current explosion radius
+  static uint8_t  maxRad[MAX_FW];           // target max radius (2..3 for Ø 4..7)
+  static uint8_t  fadeAge[MAX_FW];          // frames spent fading
+  static uint8_t  tick = 0;
+
+  if (!inited) {
+    for (uint8_t i = 0; i < MAX_FW; i++) {
+      state[i] = 0; cx[i] = 0; cy[i] = ROWS - 1; tgtY[i] = 0;
+      riseTick[i] = 2; risePhase[i] = 0; radius[i] = 0; maxRad[i] = 2; fadeAge[i] = 0;
+      rC[i] = gC[i] = bC[i] = 0;
+    }
+    inited = true;
+  }
+
+  // Light global fade so motion looks smooth without killing brightness.
+  for (int i = 0; i < NUM_LEDS; i++) {
+    int r = leds[i].r - 4;   if (r < 0) r = 0;
+    int g = leds[i].g - 4;   if (g < 0) g = 0;
+    int b = leds[i].b - 4;   if (b < 0) b = 0;
+    leds[i] = CRGB(r, g, b);
+  }
+
+  // Inline helpers (lambdas keep this self-contained)
+  auto plot = [&](int x, int y, uint8_t rr, uint8_t gg, uint8_t bb) {
+    if (x >= 0 && x < COLS && y >= 0 && y < ROWS) {
+      leds[x * ROWS + y] = CRGB(rr, gg, bb);
+    }
+  };
+
+  auto slot_for_spawn = [&]()->int8_t {
+    for (uint8_t i = 0; i < MAX_FW; i++) if (state[i] == 0) return (int8_t)i;
+    return (int8_t)-1;
+  };
+
+  auto spawn_at = [&](uint8_t slot, int col) {
+    state[slot] = 1;                         // ascending
+    cx[slot] = (int8_t)col;
+    cy[slot] = ROWS - 1;                     // start at bottom
+    tgtY[slot] = (int8_t)random8(0, (ROWS + 1) / 2);  // 0..3 (upper half)
+    riseTick[slot] = (uint8_t)random8(1, 4);          // 1..3
+    risePhase[slot] = 0;
+    radius[slot] = 0;
+    maxRad[slot] = (uint8_t)random8(3, 6);   // radius 2..3 -> diameter 4..7
+    fadeAge[slot] = 0;
+
+    // Vivid bright color biased towards one channel
+    uint8_t pick = random8(3);
+    if (pick == 0) { // red-ish
+      rC[slot] = random8(180, 200); gC[slot] = random8(20, 100);  bC[slot] = random8(20, 100);
+    } else if (pick == 1) { // green-ish
+      rC[slot] = random8(20, 100);  gC[slot] = random8(180, 200); bC[slot] = random8(20, 100);
+    } else { // blue/purple-ish
+      rC[slot] = random8(20, 100);  gC[slot] = random8(20, 100);  bC[slot] = random8(180, 200);
+    }
+  };
+
+  auto column_is_clear = [&](int col, int minSep) {
+    // keep horizontal spacing from both active fireworks and any columns we plan this frame
+    for (uint8_t i = 0; i < MAX_FW; i++) {
+      if (state[i] != 0) {
+        int d = cx[i] - col; if (d < 0) d = -d;
+        if (d < minSep) return false;
+      }
+    }
+    return true;
+  };
+
+  // Count active and consider spawning one or a horizontally spaced "salvo"
+  uint8_t activeCount = 0;
+  for (uint8_t i = 0; i < MAX_FW; i++) if (state[i] != 0) activeCount++;
+
+  if (activeCount < MAX_FW) {
+    // 2 types of spawns:
+    // - Salvo (2-3 at once, spaced): rare
+    // - Single: common, but still enforces spacing from current actives
+    bool didSpawn = false;
+
+    // Try a spaced salvo occasionally
+    if (random8() < 12) { // ~1/21 chance per frame
+      uint8_t freeSlots = MAX_FW - activeCount;
+      uint8_t want = (uint8_t)min((int)freeSlots, (int)random8(2, 4)); // try 2..3
+      // Preferred anchor columns to spread color: left/center/right
+      const int anchors[3] = { 2, 7, 12 };
+      uint8_t spawned = 0;
+      // First pass: try anchors that are clear
+      for (uint8_t a = 0; a < 3 && spawned < want; a++) {
+        if (column_is_clear(anchors[a], 4)) {
+          int8_t s = slot_for_spawn();
+          if (s >= 0) { spawn_at((uint8_t)s, anchors[a]); spawned++; didSpawn = true; }
+        }
+      }
+      // Second pass: try nearby columns around anchors if still need more
+      for (uint8_t a = 0; a < 3 && spawned < want; a++) {
+        for (int off = 1; off <= 2 && spawned < want; off++) {
+          int candL = anchors[a] - off;
+          int candR = anchors[a] + off;
+          if (candL >= 0 && column_is_clear(candL, 4)) {
+            int8_t s = slot_for_spawn(); if (s >= 0) { spawn_at((uint8_t)s, candL); spawned++; didSpawn = true; }
+          }
+          if (spawned >= want) break;
+          if (candR < COLS && column_is_clear(candR, 4)) {
+            int8_t s = slot_for_spawn(); if (s >= 0) { spawn_at((uint8_t)s, candR); spawned++; didSpawn = true; }
+          }
+        }
+      }
+    }
+
+    // Otherwise, try a single spawn in a column that respects spacing
+    if (!didSpawn && random8() < 24) { // ~1/10 chance
+      // Try up to N random columns that keep min separation
+      for (uint8_t tries = 0; tries < 8; tries++) {
+        int col = (int)random8(COLS);
+        if (column_is_clear(col, 3)) {
+          int8_t s = slot_for_spawn();
+          if (s >= 0) { spawn_at((uint8_t)s, col); break; }
+        }
+      }
+    }
+  }
+
+  // Update/draw each firework
+  for (uint8_t i = 0; i < MAX_FW; i++) {
+    if (state[i] == 0) continue;
+
+    if (state[i] == 1) {
+      // ASCENT: move up every riseTick frames
+      risePhase[i]++;
+      if (risePhase[i] >= riseTick[i]) {
+        risePhase[i] = 0;
+        cy[i] = cy[i] - 1;
+        if (cy[i] <= tgtY[i]) {
+          state[i] = 2;           // start bright expansion
+          radius[i] = 0;
+        }
+      }
+
+      // Draw bright head + 3-pixel same-color trail downward
+      uint8_t headR = (uint8_t)min(255, (int)rC[i] + 60);
+      uint8_t headG = (uint8_t)min(255, (int)gC[i] + 60);
+      uint8_t headB = (uint8_t)min(255, (int)bC[i] + 60);
+      plot(cx[i], cy[i], headR, headG, headB);
+
+      for (int t = 1; t <= 3; t++) {
+        int ty = cy[i] + t;
+        if (ty >= ROWS) break;
+        int scale = (t == 1) ? 70 : (t == 2 ? 45 : 25);
+        plot(cx[i], ty,
+             (uint8_t)((rC[i] * scale) / 100),
+             (uint8_t)((gC[i] * scale) / 100),
+             (uint8_t)((bC[i] * scale) / 100));
+      }
+
+    } else if (state[i] == 2) {
+      // EXPANDING BRIGHT: increase radius to max without dimming
+      int R = radius[i];
+      int R2 = R * R;
+      uint8_t eR = (uint8_t)min(255, (int)rC[i] + 40);
+      uint8_t eG = (uint8_t)min(255, (int)gC[i] + 40);
+      uint8_t eB = (uint8_t)min(255, (int)bC[i] + 40);
+
+      for (int dx = -R; dx <= R; dx++) {
+        for (int dy = -R; dy <= R; dy++) {
+          if (dx*dx + dy*dy <= R2) {
+            plot(cx[i] + dx, cy[i] + dy, eR, eG, eB);
+          }
+        }
+      }
+
+      if (radius[i] < maxRad[i]) {
+        radius[i]++;
+      } else {
+        state[i] = 3;     // reached max size → start fading
+        fadeAge[i] = 0;
+      }
+
+    } else {
+      // FADING at max radius (gentle gravity)
+      int R = maxRad[i];
+      int R2 = R * R;
+
+      uint8_t age = fadeAge[i];
+      int fadePct = 100 - (int)age * 10;    // 100→0
+      if (fadePct < 0) fadePct = 0;
+
+      int fall = ((age & 2) ? 1 : 0);
+      int cyFall = cy[i] + fall;
+
+      uint8_t fR = (uint8_t)((rC[i] * fadePct) / 100);
+      uint8_t fG = (uint8_t)((gC[i] * fadePct) / 100);
+      uint8_t fB = (uint8_t)((bC[i] * fadePct) / 100);
+
+      for (int dx = -R; dx <= R; dx++) {
+        for (int dy = -R; dy <= R; dy++) {
+          if (dx*dx + dy*dy <= R2) {
+            plot(cx[i] + dx, cyFall + dy, fR, fG, fB);
+          }
+        }
+      }
+
+      fadeAge[i]++;
+      if (fadeAge[i] >= 10 || cyFall >= ROWS) {
+        state[i] = 0;  // finished
+      } else {
+        cy[i] = cyFall; // keep falling while fading
+      }
+    }
+  }
+
+  tick++;
+
+  // White text on top
+  matrix->setTextColor(matrix->Color(255, 255, 255));
+  matrix->setCursor(xPos, 0);
+  matrix->print(storedName);
+} break;
+
+
   }
 }
 
