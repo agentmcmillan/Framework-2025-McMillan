@@ -52,8 +52,9 @@ static inline void blit565ToLeds(const uint16_t *frame565) {
 }
 
 // ----- Fancy text effects -----
-enum TextEffect : uint8_t { EFFECT_SOLID=0, EFFECT_RAINBOW=1, EFFECT_FIRE=2, EFFECT_GLITCH=3 };
+enum TextEffect : uint8_t { EFFECT_SOLID=0, EFFECT_RAINBOW=1, EFFECT_FIRE=2, EFFECT_GLITCH=3, EFFECT_ICE=4, };
 static TextEffect currentTextEffect = EFFECT_SOLID;
+static uint8_t numberOfEffects = 5;
 
 // params/state used by effects
 static CRGB textColor = CRGB(255,255,255);  // used by SOLID
@@ -582,6 +583,24 @@ static void drawNameWithEffect() {
         xPosGlitch += CHAR_W; // advance 1 char cell
       }
     } break;
+    case EFFECT_ICE: {
+  // UV/blue flame-ish background flicker
+  for (int i = 0; i < NUM_LEDS; i++) {
+    uint8_t flicker = random8(120);
+
+    // cool tone; clamp to byte
+    int r = (int)random8(0, 64)   - (int)flicker / 8;  if (r < 0) r = 0;       // slight red for purple tint
+    int g = (int)random8(0, 24)   - (int)flicker / 6;  if (g < 0) g = 0;       // keep green very low
+    int b = (int)random8(160,255) - (int)flicker / 2;  if (b < 0) b = 0;       // dominant blue, flickers darker
+
+    leds[i] = CRGB(r, g, b);
+  }
+
+  // cyan text on top
+  matrix->setTextColor(matrix->Color(0, 255, 255));
+  matrix->setCursor(xPos, 0);
+  matrix->print(storedName);
+} break;
   }
 }
 
@@ -1295,7 +1314,7 @@ static void handleButtons() {
 
   if (!b3 && prevB3) {
     noteActivity();
-  currentTextEffect = static_cast<TextEffect>((currentTextEffect + 1) % 4);
+  currentTextEffect = static_cast<TextEffect>((currentTextEffect + 1) % numberOfEffects);
   // restart current text so you see the new effect immediately
   startScroll(g_scroll.isIdle, /*msgId*/0, g_scroll.repeats, g_scroll.color);
   Serial.printf("[UI] TextEffect -> %u\n", (unsigned)currentTextEffect);
