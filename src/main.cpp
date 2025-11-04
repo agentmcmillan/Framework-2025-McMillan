@@ -52,9 +52,9 @@ static inline void blit565ToLeds(const uint16_t *frame565) {
 }
 
 // ----- Fancy text effects -----
-enum TextEffect : uint8_t { EFFECT_SOLID=0, EFFECT_RAINBOW=1, EFFECT_FIRE=2, EFFECT_GLITCH=3, EFFECT_ICE=4, EFFECT_MATRIX=5, EFFECT_FIREWORK=6, EFFECT_CHEVRON=7 };
+enum TextEffect : uint8_t { EFFECT_SOLID=0, EFFECT_RAINBOW=1, EFFECT_FIRE=2, EFFECT_GLITCH=3, EFFECT_ICE=4, EFFECT_MATRIX=5, EFFECT_FIREWORK=6, EFFECT_CHEVRON=7, EFFECT_BUGS=8, };
 static TextEffect currentTextEffect = EFFECT_SOLID;
-static uint8_t numberOfEffects = 8;
+static uint8_t numberOfEffects = 9;
 
 // params/state used by effects
 static CRGB textColor = CRGB(255,255,255);  // used by SOLID
@@ -963,8 +963,135 @@ case EFFECT_CHEVRON: {
   matrix->setCursor(xPos, 0);
   matrix->print(storedName);
 } break;
+case EFFECT_BUGS: {
+  // 15x7 matrix, columns wired left->right, each column top->bottom.
+  const int COLS = 15;
+  const int ROWS = 7;
 
+  // Slightly brighter dark-purple bugs & trails (still behind CYAN text).
+  // Cardinal motion with wraparound; trails fade.
+  const uint8_t MAX_BUGS  = 6;
+  const uint8_t MAX_TRAIL = 10;
 
+  // Dark purple palette — nudged brighter
+  const uint8_t PUR_R = 110;  // was ~90
+  const uint8_t PUR_G = 0;
+  const uint8_t PUR_B = 170;  // was ~140
+
+  static uint8_t inited = 0;
+
+  // Per-bug state
+  static int8_t  bx[MAX_BUGS],  by[MAX_BUGS];        // head position
+  static int8_t  dx[MAX_BUGS],  dy[MAX_BUGS];        // direction ∈ {(±1,0),(0,±1)}
+  static uint8_t spd[MAX_BUGS], phase[MAX_BUGS];     // frames-per-step (1..3)
+  static uint8_t trailLen[MAX_BUGS];                 // 4..10
+  static uint8_t histX[MAX_BUGS][MAX_TRAIL];         // newest-first positions
+  static uint8_t histY[MAX_BUGS][MAX_TRAIL];
+  static uint8_t histSize[MAX_BUGS];                 // 0..trailLen
+
+  if (!inited) {
+    inited = 1;
+    for (uint8_t i = 0; i < MAX_BUGS; i++) {
+      bx[i] = random8(COLS);
+      by[i] = random8(ROWS);
+      switch (random8(4)) { // random cardinal direction
+        case 0: dx[i] =  1; dy[i] =  0; break;
+        case 1: dx[i] = -1; dy[i] =  0; break;
+        case 2: dx[i] =  0; dy[i] =  1; break;
+        default:dx[i] =  0; dy[i] = -1; break;
+      }
+      spd[i] = (uint8_t)random8(1, 4);   // 1..3 (1 = fastest)
+      phase[i] = 0;
+      trailLen[i] = (uint8_t)random8(4, 11); // 4..10
+      histSize[i] = 0;
+      for (uint8_t k = 0; k < MAX_TRAIL; k++) { histX[i][k] = bx[i]; histY[i][k] = by[i]; }
+    }
+  }
+
+  // Slightly gentler fade so the brighter purple persists a bit more
+  for (int i = 0; i < NUM_LEDS; i++) {
+    int r = leds[i].r - 5;  if (r < 0) r = 0;
+    int g = leds[i].g - 2;  if (g < 0) g = 0;
+    int b = leds[i].b - 6;  if (b < 0) b = 0;
+    leds[i] = CRGB(r, g, b);
+  }
+
+  auto plot = [&](int x, int y, uint8_t rr, uint8_t gg, uint8_t bb) {
+    if (x >= 0 && x < COLS && y >= 0 && y < ROWS) {
+      leds[x * ROWS + y] = CRGB(rr, gg, bb);
+    }
+  };
+
+  // Update bugs
+  for (uint8_t i = 0; i < MAX_BUGS; i++) {
+    // Step timing
+    phase[i]++;
+    if (phase[i] >= spd[i]) {
+      phase[i] = 0;
+
+      // ~1/3 chance to change direction; pick a new cardinal direction
+      if (random8() < 85) {
+        switch (random8(4)) {
+          case 0: dx[i] =  1; dy[i] =  0; break;
+          case 1: dx[i] = -1; dy[i] =  0; break;
+          case 2: dx[i] =  0; dy[i] =  1; break;
+          default:dx[i] =  0; dy[i] = -1; break;
+        }
+      }
+
+      // Move head with wrapping
+      int nx = bx[i] + dx[i];
+      int ny = by[i] + dy[i];
+      if (nx < 0) nx = COLS - 1; else if (nx >= COLS) nx = 0;
+      if (ny < 0) ny = ROWS - 1; else if (ny >= ROWS) ny = 0;
+      bx[i] = (int8_t)nx; by[i] = (int8_t)ny;
+
+      // Push new head to history (newest first), keep up to trailLen[i]
+      uint8_t keep = (trailLen[i] > MAX_TRAIL) ? MAX_TRAIL : trailLen[i];
+      if (histSize[i] < keep) histSize[i]++;
+      for (int k = (int)histSize[i] - 1; k > 0; k--) {
+        histX[i][k] = histX[i][k - 1];
+        histY[i][k] = histY[i][k - 1];
+      }
+      histX[i][0] = (uint8_t)bx[i];
+      histY[i][0] = (uint8_t)by[i];
+
+      // Occasionally vary trail length and speed
+      if (random8() < 16) { trailLen[i] = (uint8_t)random8(4, 11); if (histSize[i] > trailLen[i]) histSize[i] = trailLen[i]; }
+      if (random8() < 8)  { spd[i] = (uint8_t)random8(1, 4); }
+    }
+
+    // Head color: slightly brighter than base, but not overpowering text
+    uint8_t hr = (uint8_t)min(200, (int)PUR_R + 30);
+    uint8_t hg = PUR_G;
+    uint8_t hb = (uint8_t)min(210, (int)PUR_B + 40);
+    plot(bx[i], by[i], hr, hg, hb);
+
+    // Trail brightness: allow up to ~90% of base (was 75%) and lift the floor a bit
+    for (uint8_t age = 1; age < histSize[i]; age++) {
+      int x = (int)histX[i][age];
+      int y = (int)histY[i][age];
+
+      int den = (int)histSize[i]; if (den == 0) den = 1;
+      int num = (int)(histSize[i] - age) * 90;   // cap 90% of base
+      int pct = num / den;                       // ≈ 90→~0
+      pct = (pct * 12) / 10;                     // mild mid-tone lift
+      if (pct > 90) pct = 90;
+      if (pct < 18) pct = 18;                    // faint but visible tail end
+
+      uint8_t r = (uint8_t)((PUR_R * pct) / 100);
+      uint8_t g = 0;
+      uint8_t b = (uint8_t)((PUR_B * pct) / 100);
+
+      plot(x, y, r, g, b);
+    }
+  }
+
+  // Cyan text on top
+  matrix->setTextColor(matrix->Color(0, 255, 0));
+  matrix->setCursor(xPos, 0);
+  matrix->print(storedName);
+} break;
 
   }
 }
