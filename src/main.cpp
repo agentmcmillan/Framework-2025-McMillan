@@ -199,6 +199,104 @@ static inline void noteActivity() {
 
 
 
+// ---------------- SIRC-20 helpers ----------------
+// flip 32-bit
+static inline uint32_t bitrev32(uint32_t x) {
+  x = ((x >> 1) & 0x55555555u) | ((x & 0x55555555u) << 1);
+  x = ((x >> 2) & 0x33333333u) | ((x & 0x33333333u) << 2);
+  x = ((x >> 4) & 0x0F0F0F0Fu) | ((x & 0x0F0F0F0Fu) << 4);
+  x = ((x >> 8) & 0x00FF00FFu) | ((x & 0x00FF00FFu) << 8);
+  x = (x >> 16) | (x << 16);
+  return x;
+}
+// Take IRremote's MSB-first raw32, return our LSB-first 20-bit word (right-aligned)
+static inline uint32_t sirc20FlipToLSB(uint32_t raw32) {
+  return bitrev32(raw32) >> (32 - 20);
+}
+// Unpack: [0..5]=op(6), [6..14]=attacker(9), [15..19]=hi5(5)
+static inline void sirc20Unpack(uint32_t wLSB, uint8_t &op, uint16_t &att, uint8_t &hi5) {
+  op  =  wLSB        & 0x3F;
+  att = (wLSB >> 6)  & 0x1FF;
+  hi5 = (wLSB >> 15) & 0x1F;
+}
+// For value-style ops (14-bit)
+static inline uint16_t sirc20Value14(uint32_t wLSB) {
+  uint16_t low9 = (wLSB >> 6) & 0x1FF;
+  uint16_t hi5  = (wLSB >> 15) & 0x1F;
+  return (hi5 << 9) | low9;
+}
+
+
+// Pack our 20-bit Sony word (LSB-first on the wire):
+// [0..5]=op, [6..14]=attacker(9b), [15..19]=charm(5b)
+static inline uint32_t sirc20Pack(uint8_t op, uint16_t attacker, uint8_t charm) {
+  return (uint32_t(op & 0x3F))
+       | (uint32_t(attacker & 0x1FF) << 6)
+       | (uint32_t(charm & 0x1F) << 15);
+}
+
+static void sendSirc20(uint32_t word, const char* tag = nullptr) {
+#ifdef IR_TX_PIN
+  if (tag) Serial.printf("[IRTX] %s SIRC20=0x%05lX\n", tag, (unsigned long)word);
+  else     Serial.printf("[IRTX] SIRC20=0x%05lX\n", (unsigned long)word);
+  // 20-bit Sony (library sends LSB-first as needed)
+  IrSender.sendSony(word, 20);
+#else
+  (void)word; (void)tag;
+  Serial.println("[IRTX] (no IR_TX_PIN) Fire pressed — anim only");
+#endif
+}
+
+// Convenience: fire with our own CFG.id and charm (0..31; 0 = no unlock)
+static void sendFireBadge(uint8_t charm = 0) {
+        IrReceiver.disableIRIn(); 
+
+  uint32_t w = sirc20Pack(/*op=*/0x00, /*attacker=*/CFG.id, /*charm=*/(CFG.userCharmId & 31));
+  sendSirc20(w, "FIRE");
+  delay(30);
+        IrReceiver.enableIRIn(); 
+
+}
+
+// Respond to a SCORE_REQUEST by sending 3 frames: SCORE0/1/2
+
+static void sendScoreTriplet(uint16_t myId, uint16_t score15) {
+  // split 15-bit score into 3×5b chunks
+  uint8_t p0 =  score15        & 0x1F; // [4:0]
+  uint8_t p1 = (score15 >> 5)  & 0x1F; // [9:5]
+  uint8_t p2 = (score15 >> 10) & 0x1F; // [14:10]
+
+  // Add small randomized/backoff delay to reduce collisions across badges
+  // (also bias by ID to spread even more)
+  uint16_t jitter = 10 + (myId & 0x07) * 5 + (uint16_t)random(0, 15);
+  delay(jitter);
+
+  const uint16_t interPartMs  = 14;  // gap between 0→1 and 1→2
+  const uint16_t interGroupMs = 28;  // gap between repeat groups
+  const uint8_t  groups       = 2;   // send triplet twice
+
+  for (uint8_t g = 0; g < groups; ++g) {
+    IrSender.sendSony(sirc20Pack(0x07, myId, p0), 20); // SCORE0
+    delay(interPartMs);
+    IrSender.sendSony(sirc20Pack(0x08, myId, p1), 20); // SCORE1
+    delay(interPartMs);
+    IrSender.sendSony(sirc20Pack(0x09, myId, p2), 20); // SCORE2
+    delay(interGroupMs);
+  }
+}
+
+// Pack an op with a 14-bit payload (used by SPECIAL_SCENE, etc.)
+static inline uint32_t sirc20Value(uint8_t op, uint16_t value14) {
+  uint16_t low9 = (value14 & 0x01FF);
+  uint8_t  hi5  = (value14 >> 9) & 0x1F;
+  return (uint32_t(op & 0x3F))
+       | (uint32_t(low9) << 6)
+       | (uint32_t(hi5)  << 15);
+}
+
+
+
+
 
 #ifdef SCORE_SNIFFER
   #include "uart_link.hpp"
@@ -324,6 +422,19 @@ static inline void noteActivity() {
     }
   }
 
+
+  static void tickRequestTx() {
+    //IrReceiver.disableIRIn(); 
+  
+    uint32_t now = millis();
+    if (now - g_lastReqMs < g_reqPeriodMs) return;
+    g_lastReqMs = now;
+
+    uint32_t w = sirc20Pack(OP_SCORE_REQUEST, REQUESTER_ID, 0);
+    sendSirc20(w, "SCORE_REQUEST");
+
+    //IrReceiver.enableIRIn(); 
+  }
 #endif
 
 
@@ -363,101 +474,6 @@ static void statsLoadAttackers() {
   memset(g_attackerBits, 0, sizeof(g_attackerBits));
   File f = LittleFS.open("/attackers.bin", "r");
   if (f) { f.read((uint8_t*)g_attackerBits, sizeof(g_attackerBits)); f.close(); }
-}
-
-// ---------------- SIRC-20 helpers ----------------
-// flip 32-bit
-static inline uint32_t bitrev32(uint32_t x) {
-  x = ((x >> 1) & 0x55555555u) | ((x & 0x55555555u) << 1);
-  x = ((x >> 2) & 0x33333333u) | ((x & 0x33333333u) << 2);
-  x = ((x >> 4) & 0x0F0F0F0Fu) | ((x & 0x0F0F0F0Fu) << 4);
-  x = ((x >> 8) & 0x00FF00FFu) | ((x & 0x00FF00FFu) << 8);
-  x = (x >> 16) | (x << 16);
-  return x;
-}
-// Take IRremote's MSB-first raw32, return our LSB-first 20-bit word (right-aligned)
-static inline uint32_t sirc20FlipToLSB(uint32_t raw32) {
-  return bitrev32(raw32) >> (32 - 20);
-}
-// Unpack: [0..5]=op(6), [6..14]=attacker(9), [15..19]=hi5(5)
-static inline void sirc20Unpack(uint32_t wLSB, uint8_t &op, uint16_t &att, uint8_t &hi5) {
-  op  =  wLSB        & 0x3F;
-  att = (wLSB >> 6)  & 0x1FF;
-  hi5 = (wLSB >> 15) & 0x1F;
-}
-// For value-style ops (14-bit)
-static inline uint16_t sirc20Value14(uint32_t wLSB) {
-  uint16_t low9 = (wLSB >> 6) & 0x1FF;
-  uint16_t hi5  = (wLSB >> 15) & 0x1F;
-  return (hi5 << 9) | low9;
-}
-
-
-// Pack our 20-bit Sony word (LSB-first on the wire):
-// [0..5]=op, [6..14]=attacker(9b), [15..19]=charm(5b)
-static inline uint32_t sirc20Pack(uint8_t op, uint16_t attacker, uint8_t charm) {
-  return (uint32_t(op & 0x3F))
-       | (uint32_t(attacker & 0x1FF) << 6)
-       | (uint32_t(charm & 0x1F) << 15);
-}
-
-static void sendSirc20(uint32_t word, const char* tag = nullptr) {
-#ifdef IR_TX_PIN
-  if (tag) Serial.printf("[IRTX] %s SIRC20=0x%05lX\n", tag, (unsigned long)word);
-  else     Serial.printf("[IRTX] SIRC20=0x%05lX\n", (unsigned long)word);
-  // 20-bit Sony (library sends LSB-first as needed)
-  IrSender.sendSony(word, 20);
-#else
-  (void)word; (void)tag;
-  Serial.println("[IRTX] (no IR_TX_PIN) Fire pressed — anim only");
-#endif
-}
-
-// Convenience: fire with our own CFG.id and charm (0..31; 0 = no unlock)
-static void sendFireBadge(uint8_t charm = 0) {
-        IrReceiver.disableIRIn(); 
-
-  uint32_t w = sirc20Pack(/*op=*/0x00, /*attacker=*/CFG.id, /*charm=*/(CFG.userCharmId & 31));
-  sendSirc20(w, "FIRE");
-  delay(30);
-        IrReceiver.enableIRIn(); 
-
-}
-
-// Respond to a SCORE_REQUEST by sending 3 frames: SCORE0/1/2
-
-static void sendScoreTriplet(uint16_t myId, uint16_t score15) {
-  // split 15-bit score into 3×5b chunks
-  uint8_t p0 =  score15        & 0x1F; // [4:0]
-  uint8_t p1 = (score15 >> 5)  & 0x1F; // [9:5]
-  uint8_t p2 = (score15 >> 10) & 0x1F; // [14:10]
-
-  // Add small randomized/backoff delay to reduce collisions across badges
-  // (also bias by ID to spread even more)
-  uint16_t jitter = 10 + (myId & 0x07) * 5 + (uint16_t)random(0, 15);
-  delay(jitter);
-
-  const uint16_t interPartMs  = 14;  // gap between 0→1 and 1→2
-  const uint16_t interGroupMs = 28;  // gap between repeat groups
-  const uint8_t  groups       = 2;   // send triplet twice
-
-  for (uint8_t g = 0; g < groups; ++g) {
-    IrSender.sendSony(sirc20Pack(0x07, myId, p0), 20); // SCORE0
-    delay(interPartMs);
-    IrSender.sendSony(sirc20Pack(0x08, myId, p1), 20); // SCORE1
-    delay(interPartMs);
-    IrSender.sendSony(sirc20Pack(0x09, myId, p2), 20); // SCORE2
-    delay(interGroupMs);
-  }
-}
-
-// Pack an op with a 14-bit payload (used by SPECIAL_SCENE, etc.)
-static inline uint32_t sirc20Value(uint8_t op, uint16_t value14) {
-  uint16_t low9 = (value14 & 0x01FF);
-  uint8_t  hi5  = (value14 >> 9) & 0x1F;
-  return (uint32_t(op & 0x3F))
-       | (uint32_t(low9) << 6)
-       | (uint32_t(hi5)  << 15);
 }
 
 
@@ -1913,6 +1929,7 @@ void handleIR() {
     uint32_t wLSB = sirc20FlipToLSB(d.decodedRawData);
     uint8_t  op; uint16_t attacker; uint8_t hi5;
     sirc20Unpack(wLSB, op, attacker, hi5);
+        
 
     // --- SLEEP GATE: while asleep, only WAKE is honored ---
     if (g_sleep.asleep) {
@@ -1933,6 +1950,7 @@ void handleIR() {
         Serial.printf("[IR] FIRE attacker=%u charm=%u\n", attacker, charm);
         g_score.hits_total++;
         scoreAwardRoll(5, "hit");
+        
 
         // Unique badge ID tiers (only if first time seen)
         bool firstTime = statsAddAttacker(attacker);
@@ -2033,10 +2051,10 @@ void handleIR() {
       #endif
 
 
-      #ifdef SCORE_SNIIFER
-        case 0x07: processScorePart(badge, 0, p5); break;
-        case 0x08: processScorePart(badge, 1, p5); break;
-        case 0x09: processScorePart(badge, 2, p5); break;
+      #ifdef SCORE_SNIFFER
+        case 0x07: processScorePart(attacker, 0, hi5); break;
+        case 0x08: processScorePart(attacker, 1, hi5); break;
+        case 0x09: processScorePart(attacker, 2, hi5); break;
       #endif
         // (optional: handle assembling others' scores)
         break;
