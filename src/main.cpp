@@ -23,6 +23,7 @@ extern "C" {
 #include "scene_fuse.hpp"
 #include "scene_kitty.hpp"
 #include "scene_volt.hpp"
+#include "scene_hit.hpp"
 //#include "scenes.hpp"
 
 //#define SCORE_SNIFFER
@@ -1464,7 +1465,11 @@ static void playSceneById(uint8_t sid) {
       sceneStart(scene_volt_frames, SCENE_VOLT_FRAMES, SCENE_VOLT_FPS);
       break;
 
-    default:
+    case 5: // hit
+      sceneStart(scene_hit_frames, SCENE_HIT_FRAMES, SCENE_HIT_FPS);
+      break;
+
+      default:
       Serial.printf("[SCENE] unknown id %u\n", sid);
       break;
   }
@@ -1949,6 +1954,7 @@ void handleIR() {
         }
 
         fireAnimStart();
+        playSceneById(5);
       } break;
 
       case 0x01: { // SLEEP (value14: minutes 0..127)
@@ -2048,7 +2054,7 @@ void handleIR() {
 
 // ---------------- Arduino lifecycle ----------------
 void setup() {
-  delay(100);
+  delay(500);
     vreg_set_voltage(VREG_VOLTAGE_0_90);  // options: 0_85, 0_90, 0_95, 1_00, 1_05, 1_10, 1_15, 1_20, 1_25, 1_30
     sleep_ms(10);                          // allow voltage to settle
     set_sys_clock_khz(100000, true);       // now safe to overclock

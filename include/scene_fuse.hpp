@@ -4,7 +4,7 @@
 
 #define SCENE_FUSE_ID     2
 #define SCENE_FUSE_FRAMES 25
-#define SCENE_FUSE_FPS    6
+#define SCENE_FUSE_FPS    7
 
 // Expect WIDTH=15 and HEIGHT=7 in your sketch
 static const uint16_t PROGMEM scene_fuse_frames[SCENE_FUSE_FRAMES][15*7] = {
