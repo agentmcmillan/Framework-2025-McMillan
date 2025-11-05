@@ -4,7 +4,7 @@
 
 #define SCENE_HITBARS_ID     6
 #define SCENE_HITBARS_FRAMES 17
-#define SCENE_HITBARS_FPS    12
+#define SCENE_HITBARS_FPS    17
 
 // Expect WIDTH=15 and HEIGHT=7 in your sketch
 static const uint16_t PROGMEM scene_hitbars_frames[SCENE_HITBARS_FRAMES][15*7] = {

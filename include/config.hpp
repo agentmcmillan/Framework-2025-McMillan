@@ -136,6 +136,38 @@ static uint32_t g_battLastMs = 0;
 #define LOW_BATT_MV 0                 // e.g., 2300 for 2.3V, TBD
 #endif
 
+// ---- Low-battery GPIO (drives a transistor/LED/etc.) ----
+#ifndef LOW_BATT_PIN
+#define LOW_BATT_PIN 11          // GPIO11
+#endif
+
+// Thresholds in millivolts (tweak later when we know the real number)
+#ifndef LOW_BATT_THRESH_MV
+#define LOW_BATT_THRESH_MV 2200  // default ~2.4 V pack
+#endif
+#ifndef LOW_BATT_HYST_MV
+#define LOW_BATT_HYST_MV 100     // 0.10 V hysteresis
+#endif
+
+#ifndef BATT_PRESENT_MIN_MV
+#define BATT_PRESENT_MIN_MV 1200  // 0.1 V floor
+#endif
+
+// If your external circuit is active-low, set to 0
+#ifndef LOW_BATT_ACTIVE_HIGH
+#define LOW_BATT_ACTIVE_HIGH 1
+#endif
+#if LOW_BATT_ACTIVE_HIGH
+  #define LOW_BATT_ON  HIGH
+  #define LOW_BATT_OFF LOW
+#else
+  #define LOW_BATT_ON  LOW
+  #define LOW_BATT_OFF HIGH
+#endif
+
+extern uint16_t g_batt_mV;   // current pack mV
+static bool g_lowBatt = false; // debounced state
+
 static uint32_t g_sleepBreathLast = 0;
 
 static uint32_t g_sleepPulseLast = 0;

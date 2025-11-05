@@ -28,7 +28,7 @@ extern "C" {
 #include "scene_tx.hpp"
 //#include "scenes.hpp"
 
-//#define SCORE_SNIFFER
+#define SCORE_SNIFFER
 #define LOUD_SERIAL
 
 
@@ -236,14 +236,32 @@ static uint16_t readBatteryMilliVoltsOnce() {
   return (uint16_t)(v_batt * 1000.0f + 0.5f);     // mV
 }
 
+static inline void lowBattUpdateFromReading(uint16_t batt_mV) {
+  // Hysteresis:
+  if (!g_lowBatt && batt_mV <= LOW_BATT_THRESH_MV) {
+    g_lowBatt = true;
+  } else if (g_lowBatt && batt_mV >= (LOW_BATT_THRESH_MV + LOW_BATT_HYST_MV)) {
+    g_lowBatt = false;
+  }
+  digitalWrite(LOW_BATT_PIN, g_lowBatt ? LOW_BATT_ON : LOW_BATT_OFF);
+}
+
+static inline void lowBattLightUpdate(uint16_t batt_mV) {
+  const bool on = (batt_mV >= BATT_PRESENT_MIN_MV) && (batt_mV <= LOW_BATT_THRESH_MV);
+  digitalWrite(LOW_BATT_PIN, on ? LOW_BATT_ON : LOW_BATT_OFF);
+}
+
 static inline void batteryPollTick() {
   uint32_t now = millis();
   if (now - g_battLastMs >= BATT_UPDATE_MS) {
     g_battLastMs = now;
     g_batt_mV = readBatteryMilliVoltsOnce();
+    lowBattLightUpdate(g_batt_mV);
   }
 }
 
+
+static inline bool isLowBattery() { return g_lowBatt; }
 
 // ---------------- SIRC-20 helpers ----------------
 // flip 32-bit
@@ -342,7 +360,7 @@ static inline uint32_t sirc20Value(uint8_t op, uint16_t value14) {
 
 
 
-
+static void playSceneById(uint8_t sid);
 
 #ifdef SCORE_SNIFFER
   #include "uart_link.hpp"
@@ -2120,6 +2138,8 @@ void setup() {
   pinMode(BTN1, INPUT_PULLUP);
   pinMode(BTN2, INPUT_PULLUP);
   pinMode(BTN3, INPUT_PULLUP);
+  pinMode(LOW_BATT_PIN, OUTPUT);
+  digitalWrite(LOW_BATT_PIN, LOW_BATT_OFF);
     // After pinMode(BTN1/2/3, INPUT_PULLUP);
   // If FIRE (BTN2) is held during boot, disable auto-sleep (runtime only)
   // --- BOOT TOGGLE: hold FIRE to flip sleepDisabled ---
@@ -2127,6 +2147,7 @@ void setup() {
   analogReadResolution(12);
   pinMode(BATTERY_ADC_PIN, INPUT);
   g_batt_mV = readBatteryMilliVoltsOnce();
+
  
 
   // Seed RNG from jitter
