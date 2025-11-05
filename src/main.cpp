@@ -22,6 +22,7 @@ extern "C" {
 #include "scene_nyan.hpp"
 #include "scene_fuse.hpp"
 #include "scene_kitty.hpp"
+#include "scene_volt.hpp"
 //#include "scenes.hpp"
 
 //#define SCORE_SNIFFER
@@ -458,6 +459,9 @@ static inline uint32_t sirc20Value(uint8_t op, uint16_t value14) {
        | (uint32_t(hi5)  << 15);
 }
 
+
+
+
 // ---------------- Simple message system ----------------
 static const uint8_t CHAR_W = 6;     // 5x7 font + 1px gap
 static const uint16_t SCROLL_MS = 80;
@@ -473,8 +477,8 @@ static String resolveMessageText(uint8_t id) {
   if (id == 0) return buildIdleLine();
   switch (id) {
     case 1: return "Fuse CATS: Michael Kohler, Andy Babin, and Ryan Middlemiss 2025";
-    case 2: return "Share and enjoy";
-    case 3: return "Pixera starts in Room 1 soon";
+    case 2: return "Framework New York 2025";
+    case 3: return "Share and Enjoy";
     default: return String("MSG ") + id;
   }
 }
@@ -1390,6 +1394,57 @@ static void sceneStart(const uint16_t (*frames)[WIDTH*HEIGHT],
   // activeIsIdle = true; qHead=qCount=0; // etc.
 }
 
+
+// ---- Simple scene queue (up to 8 ids) ----
+struct {
+  uint8_t buf[8];
+  uint8_t head = 0, tail = 0;
+  bool    pendingGap = false;
+  uint32_t nextStartMs = 0;
+  uint16_t gapMs = 0;   // optional pause between scenes
+} g_sceneQ;
+
+static inline bool sqEmpty() { return g_sceneQ.head == g_sceneQ.tail; }
+static inline void sqClear() { g_sceneQ.head = g_sceneQ.tail = 0; g_sceneQ.pendingGap=false; }
+static bool sqPush(uint8_t sid){
+  uint8_t nt = (uint8_t)((g_sceneQ.tail + 1) & 7);
+  if (nt == g_sceneQ.head) return false;         // full
+  g_sceneQ.buf[g_sceneQ.tail] = sid; g_sceneQ.tail = nt; return true;
+}
+static bool sqPop(uint8_t &sid){
+  if (sqEmpty()) return false;
+  sid = g_sceneQ.buf[g_sceneQ.head]; g_sceneQ.head = (uint8_t)((g_sceneQ.head + 1) & 7);
+  return true;
+}
+
+
+
+// ---- Play scene by numeric ID (startup & IR reuse) ----
+#ifndef STARTUP_SCENE_ID
+#define STARTUP_SCENE_ID 2
+#endif
+
+static void playSceneById(uint8_t sid) {
+  switch (sid) {
+    case 1: // nyan
+      sceneStart(scene_nyan_frames, SCENE_NYAN_FRAMES, SCENE_NYAN_FPS);
+      break;
+
+    case 2: // fuse
+      sceneStart(scene_fuse_frames, SCENE_FUSE_FRAMES, SCENE_FUSE_FPS);
+      break;
+
+    case 4: // volt
+      sceneStart(scene_volt_frames, SCENE_VOLT_FRAMES, SCENE_VOLT_FPS);
+      break;
+
+    default:
+      Serial.printf("[SCENE] unknown id %u\n", sid);
+      break;
+  }
+}
+
+
 static void sceneTick() {
   if (!g_scene.active) return;
   uint32_t now = millis();
@@ -1399,10 +1454,45 @@ static void sceneTick() {
   g_scene.idx++;
 
   if (g_scene.idx >= g_scene.frameCount) {
-    g_scene.active = false;           // play once then return to normal
+    // scene finished
+    if (!sqEmpty()) {
+      if (g_sceneQ.gapMs) {
+        g_sceneQ.pendingGap = true;
+        g_sceneQ.nextStartMs = millis() + g_sceneQ.gapMs;
+        g_scene.active = false;   // pause until gap elapses
+        return;
+      } else {
+        uint8_t nextId; sqPop(nextId);
+        playSceneById(nextId);
+        return;
+      }
+    }
+    g_scene.active = false;           // no queued scene → fall back
     return;
   }
   g_scene.nextMs = now + (1000u / g_scene.fps);
+}
+
+
+// Public helpers
+void playSceneChain(uint8_t sid1, uint8_t sid2, uint16_t gapMs = 0){
+  sqClear(); sqPush(sid1); sqPush(sid2);
+  g_sceneQ.gapMs = gapMs;
+  if (!g_scene.active) { uint8_t s; if (sqPop(s)) playSceneById(s); }
+}
+
+void playScenes(const uint8_t* ids, uint8_t n, uint16_t gapMs = 0){
+  sqClear();
+  for (uint8_t i=0;i<n && i<8;i++) sqPush(ids[i]);
+  g_sceneQ.gapMs = gapMs;
+  if (!g_scene.active) { uint8_t s; if (sqPop(s)) playSceneById(s); }
+}
+
+static inline void sceneQueueTick(){
+  if (g_sceneQ.pendingGap && !g_scene.active && (int32_t)(millis() - g_sceneQ.nextStartMs) >= 0) {
+    g_sceneQ.pendingGap = false;
+    uint8_t nextId; if (sqPop(nextId)) playSceneById(nextId);
+  }
 }
 
 
@@ -1570,27 +1660,6 @@ void testAllCharms() {
   FastLED.show();
 }
 
-// ---- Play scene by numeric ID (startup & IR reuse) ----
-#ifndef STARTUP_SCENE_ID
-#define STARTUP_SCENE_ID 2
-#endif
-
-static void playSceneById(uint8_t sid) {
-  switch (sid) {
-    case 1: // nyan (example)
-      sceneStart(scene_nyan_frames, SCENE_NYAN_FRAMES, SCENE_NYAN_FPS);
-      break;
-
-    case 2: // fuse (startup)
-      sceneStart(scene_fuse_frames, SCENE_FUSE_FRAMES, SCENE_FUSE_FPS);
-      break;
-
-    default:
-      Serial.printf("[SCENE] unknown id %u\n", sid);
-      break;
-  }
-}
-
 
 // ---- Choose which scene+frame to show while asleep ----
 #ifndef SLEEP_SCENE_ID
@@ -1611,26 +1680,11 @@ struct SceneDef {
 // If you already have SCENE_*_ID constants, feel free to switch on those.
 static bool getSceneDef(uint8_t sid, SceneDef &out) {
   switch (sid) {
-    case 1: // nyan
-      out.frames = scene_nyan_frames;
-      out.count  = SCENE_NYAN_FRAMES;
-      out.fps    = SCENE_NYAN_FPS;
-      return true;
-
-    case 2: // fuse
-      out.frames = scene_fuse_frames;
-      out.count  = SCENE_FUSE_FRAMES;
-      out.fps    = SCENE_FUSE_FPS;
-      return true;
-
-          case 3: // kitty
-      out.frames = scene_kitty_frames;
-      out.count  = SCENE_KITTY_FRAMES;
-      out.fps    = SCENE_KITTY_FPS;
-      return true;
-
-    default:
-      return false;
+    case 1: out.frames = scene_nyan_frames;  out.count = SCENE_NYAN_FRAMES;  out.fps = SCENE_NYAN_FPS;  return true;
+    case 2: out.frames = scene_fuse_frames;  out.count = SCENE_FUSE_FRAMES;  out.fps = SCENE_FUSE_FPS;  return true;
+    case 3: out.frames = scene_kitty_frames; out.count = SCENE_KITTY_FRAMES; out.fps = SCENE_KITTY_FPS; return true;
+    case 4: out.frames = scene_volt_frames;  out.count = SCENE_VOLT_FRAMES;  out.fps = SCENE_VOLT_FPS;  return true;
+    default: return false;
   }
 }
 
@@ -2010,16 +2064,16 @@ void setup() {
   // start idle name scroll
     if (CFG.sleepDisabled) {
     const uint16_t Y = matrix->Color(255,255,0);
-    matrix->fillScreen(Y); FastLED.show(); delay(250);
-    matrix->fillScreen(0); FastLED.show(); delay(120);
-    matrix->fillScreen(Y); FastLED.show(); delay(250);
-    matrix->fillScreen(0); FastLED.show(); // leave clear for normal startup visuals
+      startScroll(/*idle*/true);
+  
+    playSceneChain(4, 2, 0);
     Serial.println("SLEEP DISABLED");
 
   }
+      startScroll(/*idle*/true);
 
-  startScroll(/*idle*/true);
-  playSceneById(STARTUP_SCENE_ID);
+  //startScroll(/*idle*/true);
+  //playSceneById(STARTUP_SCENE_ID);
 
 
   #ifdef SCORE_SNIFFER
@@ -2065,8 +2119,15 @@ void loop() {
       renderScrollTick();
     }
   }
+  sceneQueueTick();
 
   handleSerial(); 
+  // If sleep is disabled, pin runtime brightness to 20 (0..128 scale), without persisting.
+  if (CFG.sleepDisabled && CFG.brightness != 20) {
+    CFG.brightness = 20;                            // runtime only
+    FastLED.setBrightness(map128to255(20));
+    FastLED.show();
+  }
 
   // --- Auto-sleep when awake (gated by persistent CFG.sleepDisabled) ---
   if (!g_sleep.asleep) {
