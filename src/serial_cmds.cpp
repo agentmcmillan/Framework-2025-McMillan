@@ -7,10 +7,34 @@
 #include "serial_cmds.hpp" // this header
 #include "protocol.h"      // (op codes if you need them)
 
+
+
+extern uint16_t statsUniqueCount();
+extern void     statsLoadAttackers();
+extern uint16_t g_batt_mV;
+extern uint16_t g_batt_raw;
+
+extern void startScroll(bool idle, uint8_t msgId, uint8_t reps, uint16_t color);
+
+// map128to255() is defined in main.cpp
+extern uint8_t  map128to255(uint8_t);
+
+// Auto-sleep accessors
+extern uint32_t getAutoSleepMinMs();
+extern void     setAutoSleepMinMs(uint32_t);
+
+// Score snapshot API
+struct ScoreSnapshot {
+  uint32_t score, hits_total, fires_total, sessions_woke, scenes_triggered;
+  uint32_t r5, r10, r20, r40;
+};
+extern void getScoreSnapshot(ScoreSnapshot &s);
+extern void setScoreSnapshot(const ScoreSnapshot &s);
+
 // --------- externs provided by main.cpp ----------
 extern BadgeConfig CFG;
 // IMPORTANT: ensure startScroll in main.cpp is NOT 'static'
-extern void startScroll(bool idle, uint8_t msgId, uint8_t reps, uint16_t color);
+//extern void startScroll(bool idle, uint8_t msgId, uint8_t reps, uint16_t color);
 // Brightness mapper from 0..128 -> 0..255
 extern uint8_t map128to255(uint8_t v);
 
@@ -75,40 +99,59 @@ static void printStatusJson() {
   Serial.println();
 }
 
+
 // ============== BACKUP (GET DUMP) ==============
-static void printBadgeDumpJson() {
-  // attackers map: 64 bytes stored in /attackers.bin
+void printBadgeDumpJson() {
   uint8_t attackers[64] = {0};
   if (LittleFS.exists("/attackers.bin")) {
     File f = LittleFS.open("/attackers.bin", "r");
     if (f) { (void)f.read(attackers, sizeof(attackers)); f.close(); }
   }
 
-  JsonDocument doc;  // dynamic in v7
-  doc["version"] = 1;
-  doc["fw"]      = "cats-badge";
+  JsonDocument doc;
+  doc["version"]   = 2;
+  doc["fw"]        = "cats-badge";
+  doc["buildDate"] = __DATE__;
+  doc["buildTime"] = __TIME__;
 
+  // cfg
   auto cfg = doc["cfg"].to<JsonObject>();
-  cfg["name"]         = CFG.name;
-  cfg["id"]           = CFG.id;
-  cfg["brightness"]   = CFG.brightness;
-  cfg["colorRGB"]     = CFG.colorRGB;
-  cfg["unlockedMask"] = CFG.unlockedMask;
-  cfg["userCharmId"]  = CFG.userCharmId;  // include in dump
+  cfg["name"]           = CFG.name;
+  cfg["id"]             = CFG.id;
+  cfg["brightness"]     = CFG.brightness;
+  cfg["colorRGB"]       = CFG.colorRGB;
+  cfg["unlockedMask"]   = CFG.unlockedMask;
+  cfg["userCharmId"]    = CFG.userCharmId;
+  cfg["sleepDisabled"]  = (bool)CFG.sleepDisabled;
+  cfg["autoSleepMin"]   = (uint32_t)(getAutoSleepMinMs() / 60000UL);
 
+  // score
+  ScoreSnapshot snap; getScoreSnapshot(snap);
+  auto sc = doc["score"].to<JsonObject>();
+  sc["score"]            = snap.score;
+  sc["hits_total"]       = snap.hits_total;
+  sc["fires_total"]      = snap.fires_total;
+  sc["sessions_woke"]    = snap.sessions_woke;
+  sc["scenes_triggered"] = snap.scenes_triggered;
+  sc["r5"]               = snap.r5;
+  sc["r10"]              = snap.r10;
+  sc["r20"]              = snap.r20;
+  sc["r40"]              = snap.r40;
+
+  // stats
   auto stats = doc["stats"].to<JsonObject>();
   stats["attackers_hex"]   = binToHex(attackers, sizeof(attackers));
-  stats["score"]           = 0;  // placeholders for future growth
-  stats["hitsTotal"]       = 0;
-  stats["firePresses"]     = 0;
-  stats["sessionsAttended"]= 0;
+  stats["uniqueAttackers"] = statsUniqueCount();
+  stats["battery_mV"]  = (uint32_t)g_batt_mV;
+  stats["battery_raw"] = (uint32_t)g_batt_raw;
+  stats["adc_vref_mV"] = (uint32_t)(ADC_FULL_SCALE_VREF * 1000 + 0.5);
+  stats["adc_divider_k"] = BATTERY_DIVIDER_K;
 
   serializeJson(doc, Serial);
   Serial.println();
 }
 
-// ============== RESTORE (SET DUMP=...) ==============
-static bool applyBadgeDumpJson(const char* json, size_t len) {
+bool applyBadgeDumpJson(const char* json, size_t len) {
   JsonDocument doc;
   DeserializationError e = deserializeJson(doc, json, len);
   if (e) { Serial.printf("ERR DUMP JSON parse: %s\n", e.c_str()); return false; }
@@ -116,16 +159,37 @@ static bool applyBadgeDumpJson(const char* json, size_t len) {
   uint32_t ver = doc["version"] | 0;
   if (!ver) { Serial.println("ERR DUMP version missing/invalid"); return false; }
 
+  // cfg
   if (doc["cfg"].is<JsonObject>()) {
     JsonObject c = doc["cfg"].as<JsonObject>();
     if (c["name"].is<const char*>())    CFG.name = c["name"].as<const char*>();
-    if (c["id"].is<uint32_t>())         CFG.id   = (uint16_t)c["id"].as<uint32_t>();
-    if (c["brightness"].is<uint32_t>()) CFG.brightness = (uint8_t)c["brightness"].as<uint32_t>();
-    if (c["colorRGB"].is<uint32_t>())   CFG.colorRGB   = (uint32_t)c["colorRGB"].as<uint32_t>();
-    if (c["unlockedMask"].is<uint32_t>()) CFG.unlockedMask = (uint32_t)c["unlockedMask"].as<uint32_t>();
+    if (c["id"].is<uint32_t>())         { uint32_t id=c["id"].as<uint32_t>(); if (id>511) id=511; CFG.id=(uint16_t)id; }
+    if (c["brightness"].is<uint32_t>()) { uint32_t b=c["brightness"].as<uint32_t>(); if (b>128) b=128; CFG.brightness=(uint8_t)b; FastLED.setBrightness(map128to255(CFG.brightness)); FastLED.show(); }
+    if (c["colorRGB"].is<uint32_t>())   CFG.colorRGB = c["colorRGB"].as<uint32_t>();
+    if (c["unlockedMask"].is<uint32_t>()) CFG.unlockedMask = c["unlockedMask"].as<uint32_t>();
     if (c["userCharmId"].is<uint32_t>())  CFG.userCharmId  = (uint8_t)c["userCharmId"].as<uint32_t>();
+    if (c["sleepDisabled"].is<bool>())     CFG.sleepDisabled = c["sleepDisabled"].as<bool>();
+    if (c["autoSleepMin"].is<uint32_t>())  { uint32_t mins=c["autoSleepMin"].as<uint32_t>(); if (mins>1440) mins=1440; setAutoSleepMinMs(mins*60000UL); }
+    saveConfig(CFG);
   }
 
+  // score
+  if (doc["score"].is<JsonObject>()) {
+    ScoreSnapshot s; getScoreSnapshot(s); // start from current; patch what’s present
+    JsonObject sc = doc["score"].as<JsonObject>();
+    if (sc["score"].is<uint32_t>())            s.score            = sc["score"].as<uint32_t>();
+    if (sc["hits_total"].is<uint32_t>())       s.hits_total       = sc["hits_total"].as<uint32_t>();
+    if (sc["fires_total"].is<uint32_t>())      s.fires_total      = sc["fires_total"].as<uint32_t>();
+    if (sc["sessions_woke"].is<uint32_t>())    s.sessions_woke    = sc["sessions_woke"].as<uint32_t>();
+    if (sc["scenes_triggered"].is<uint32_t>()) s.scenes_triggered = sc["scenes_triggered"].as<uint32_t>();
+    if (sc["r5"].is<uint32_t>())               s.r5               = sc["r5"].as<uint32_t>();
+    if (sc["r10"].is<uint32_t>())              s.r10              = sc["r10"].as<uint32_t>();
+    if (sc["r20"].is<uint32_t>())              s.r20              = sc["r20"].as<uint32_t>();
+    if (sc["r40"].is<uint32_t>())              s.r40              = sc["r40"].as<uint32_t>();
+    setScoreSnapshot(s);
+  }
+
+  // stats (attackers bitmap)
   if (doc["stats"].is<JsonObject>()) {
     JsonObject s = doc["stats"].as<JsonObject>();
     if (s["attackers_hex"].is<const char*>()) {
@@ -134,16 +198,16 @@ static bool applyBadgeDumpJson(const char* json, size_t len) {
       if (hexToBin(hex, attackers, sizeof(attackers))) {
         File f = LittleFS.open("/attackers.bin", "w");
         if (f) { (void)f.write(attackers, sizeof(attackers)); f.close(); }
+        statsLoadAttackers(); // refresh RAM
       } else {
         Serial.println("WARN attackers_hex invalid");
       }
     }
   }
 
-  saveConfig(CFG);
-  FastLED.setBrightness(map128to255(CFG.brightness));
-  FastLED.show();
+  // refresh UI after applying
   startScroll(/*idle*/true, /*msgId*/0, /*reps*/0, /*color*/0);
+  Serial.println("OK DUMP applied");
   return true;
 }
 
@@ -359,6 +423,13 @@ void handleSerial() {
         } else Serial.println("ERR CHARM index 0..31");
         continue;
       }
+
+        // somewhere in your serial command switch:
+    if (cmd.equalsIgnoreCase("BAT") || cmd.equalsIgnoreCase("BAT?")) {
+      float vb = g_batt_mV / 1000.0f;
+      Serial.printf("BATT: %.2f V  (mV=%u, raw=%u)\n", vb, g_batt_mV, g_batt_raw);
+      return;
+    }
 
       Serial.println("ERR Unknown SET field");
       continue;

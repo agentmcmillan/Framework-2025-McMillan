@@ -25,6 +25,7 @@ extern "C" {
 #include "scene_volt.hpp"
 #include "scene_hit.hpp"
 #include "scene_hitbars.hpp"
+#include "scene_tx.hpp"
 //#include "scenes.hpp"
 
 //#define SCORE_SNIFFER
@@ -35,8 +36,8 @@ extern "C" {
 static uint32_t btnLastMs = 0;
 static bool prevB1 = true, prevB2 = true, prevB3 = true;
 
-static const char BUILD_DATE[] = __DATE__;
-static const char BUILD_TIME[] = __TIME__;
+const char BUILD_DATE[] = __DATE__;
+const char BUILD_TIME[] = __TIME__;
 
 CRGB leds[NUM_LEDS];
 
@@ -187,6 +188,61 @@ static inline void noteActivity() {
   if (!g_sleep.asleep) g_sleep.lastActivityMs = millis();
 }
 
+// ----- Score snapshot (for dump/restore without exposing internals)
+struct ScoreSnapshot {
+  uint32_t score, hits_total, fires_total, sessions_woke, scenes_triggered;
+  uint32_t r5, r10, r20, r40;
+};
+
+void getScoreSnapshot(ScoreSnapshot &s) {
+  s.score = g_score.score;
+  s.hits_total = g_score.hits_total;
+  s.fires_total = g_score.fires_total;
+  s.sessions_woke = g_score.sessions_woke;
+  s.scenes_triggered = g_score.scenes_triggered;
+  s.r5 = g_score.rolls_5; s.r10 = g_score.rolls_10; s.r20 = g_score.rolls_20; s.r40 = g_score.rolls_40;
+}
+
+void setScoreSnapshot(const ScoreSnapshot &s) {
+  g_score.score = s.score;
+  g_score.hits_total = s.hits_total;
+  g_score.fires_total = s.fires_total;
+  g_score.sessions_woke = s.sessions_woke;
+  g_score.scenes_triggered = s.scenes_triggered;
+  g_score.rolls_5 = s.r5; g_score.rolls_10 = s.r10; g_score.rolls_20 = s.r20; g_score.rolls_40 = s.r40;
+  g_scoreDirty = true; (void)scoreSave();
+}
+
+// Auto-sleep accessors
+uint32_t getAutoSleepMinMs()        { return g_sleep.autoTimeoutMs; }
+void     setAutoSleepMinMs(uint32_t ms) { g_sleep.autoTimeoutMs = ms; }
+
+
+
+
+
+static uint16_t readBatteryMilliVoltsOnce() {
+  uint32_t acc = 0;
+  for (int i = 0; i < BATT_SAMPLES; i++) acc += analogRead(BATTERY_ADC_PIN);
+  uint16_t raw = (uint16_t)(acc / BATT_SAMPLES);
+  g_batt_raw = raw;
+
+  // RP2040 ADC default resolution is 12-bit → 0..4095
+  float v_adc  = (raw / 4095.0f) * ADC_FULL_SCALE_VREF;
+  float v_batt = v_adc / BATTERY_DIVIDER_K;       // inverse of divider
+  if (v_batt < 0.f)   v_batt = 0.f;
+  if (v_batt > 9.9f)  v_batt = 9.9f;              // clamp to spec range
+
+  return (uint16_t)(v_batt * 1000.0f + 0.5f);     // mV
+}
+
+static inline void batteryPollTick() {
+  uint32_t now = millis();
+  if (now - g_battLastMs >= BATT_UPDATE_MS) {
+    g_battLastMs = now;
+    g_batt_mV = readBatteryMilliVoltsOnce();
+  }
+}
 
 
 // ---------------- SIRC-20 helpers ----------------
@@ -407,6 +463,9 @@ static inline uint32_t sirc20Value(uint8_t op, uint16_t value14) {
       if (tr->id < 500){
         Serial.printf("[SCORE] COMPLETE id=%u score=%u\n", tr->id, tr->score);
         //blink some stuff here
+        playSceneById(SCENE_TX_ID);
+        
+
         UartLink::sendScore(tr->id, tr->score, 3);
       }
       else 
@@ -464,7 +523,7 @@ uint16_t statsUniqueCount() {
   return n;
 }
 
-static void statsLoadAttackers() {
+void statsLoadAttackers() {
   memset(g_attackerBits, 0, sizeof(g_attackerBits));
   File f = LittleFS.open("/attackers.bin", "r");
   if (f) { f.read((uint8_t*)g_attackerBits, sizeof(g_attackerBits)); f.close(); }
@@ -1463,6 +1522,11 @@ static void playSceneById(uint8_t sid) {
       sceneStart(scene_hitbars_frames, SCENE_HITBARS_FRAMES, SCENE_HITBARS_FPS);
       break;
 
+
+    case 7: // tx
+      sceneStart(scene_tx_frames, SCENE_TX_FRAMES, SCENE_TX_FPS);
+      break;
+
       default:
       Serial.printf("[SCENE] unknown id %u\n", sid);
       break;
@@ -1582,6 +1646,9 @@ static void statsStart() {
   // Build scrolling status line for phase 0
   const uint32_t score = g_score.score;           // <-- your stored score
   g_stats.line = String("Score: ") + score + "  Charms:" + g_stats.count;
+
+  float vb = g_batt_mV / 1000.0f;
+  g_stats.line += "  Batt:" + String(vb, 2) + "V";
 
   g_stats.phase = 0;
   g_stats.idx = 0;
@@ -2057,6 +2124,9 @@ void setup() {
   // If FIRE (BTN2) is held during boot, disable auto-sleep (runtime only)
   // --- BOOT TOGGLE: hold FIRE to flip sleepDisabled ---
   delay(50); // settle
+  analogReadResolution(12);
+  pinMode(BATTERY_ADC_PIN, INPUT);
+  g_batt_mV = readBatteryMilliVoltsOnce();
  
 
   // Seed RNG from jitter
@@ -2151,6 +2221,7 @@ void loop() {
     }
   }
   sceneQueueTick();
+  batteryPollTick();
 
   handleSerial(); 
   // If sleep is disabled, pin runtime brightness to 20 (0..128 scale), without persisting.

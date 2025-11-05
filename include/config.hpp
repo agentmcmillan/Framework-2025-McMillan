@@ -111,6 +111,31 @@ bool saveHits(const JsonDocument &doc);
 #endif
 
 
+static uint16_t g_batt_mV   = 0;  // last computed battery millivolts
+static uint16_t g_batt_raw  = 0;  // last averaged raw ADC counts (0..4095)
+static uint32_t g_battLastMs = 0;
+
+// --- Battery sense (GPIO26 / ADC0) -----------------------------------------
+#ifndef BATTERY_ADC_PIN
+#define BATTERY_ADC_PIN A0            // RP2040 ADC0 is GPIO26
+#endif
+#ifndef ADC_FULL_SCALE_VREF
+#define ADC_FULL_SCALE_VREF 3.30f     // adjust if you calibrate later
+#endif
+#ifndef BATTERY_DIVIDER_K
+#define BATTERY_DIVIDER_K 0.357f      // Vadc = K * Vbatt  (so Vbatt = Vadc / K)
+#endif
+#ifndef BATT_SAMPLES
+#define BATT_SAMPLES 8
+#endif
+#ifndef BATT_UPDATE_MS
+#define BATT_UPDATE_MS 2000UL
+#endif
+// Optional: set to 0 to disable warning for now (we don’t know the right value yet)
+#ifndef LOW_BATT_MV
+#define LOW_BATT_MV 0                 // e.g., 2300 for 2.3V, TBD
+#endif
+
 static uint32_t g_sleepBreathLast = 0;
 
 static uint32_t g_sleepPulseLast = 0;
