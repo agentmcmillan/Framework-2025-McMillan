@@ -466,15 +466,12 @@ static inline uint32_t sirc20Value(uint8_t op, uint16_t value14) {
 static const uint8_t CHAR_W = 6;     // 5x7 font + 1px gap
 static const uint16_t SCROLL_MS = 80;
 
-static String buildIdleLine() {
-  String s = CFG.name.length() ? CFG.name : "Badge";
-  //s += "  ";
-  //for (uint8_t i=0;i<32;i++) if (CFG.unlockedMask & (1UL<<i)) s += char('0'+(i%10));
-  //s += "  ";
-  return s;
-}
+static String buildIdleLine();
+static String resolveMessageText(uint8_t id);
+
+
 static String resolveMessageText(uint8_t id) {
-  if (id == 0) return buildIdleLine();
+  //if (id == 0) return buildIdleLine();
   switch (id) {
     case 1: return "Fuse CATS: Michael Kohler, Andy Babin, and Ryan Middlemiss 2025";
     case 2: return "Framework New York 2025";
@@ -483,18 +480,31 @@ static String resolveMessageText(uint8_t id) {
   }
 }
 
+static String buildIdleLine() {
+  String s = CFG.name.length() ? CFG.name : "Badge";
+  if (CFG.sleepDisabled) {                 // still append Message 2
+    String m2 = resolveMessageText(2);     // “Share and enjoy”
+    if (m2.length()) { s += "  "; s += m2; }
+  }
+  return s;
+}
+
+
+
 struct ScrollState {
   bool     active = false;
-  bool     isIdle = true;        // true → idle (name) loop
-  uint8_t  repeats = 0;          // for non-idle message
-  uint16_t color = 0;            // 565 color for text
+  bool     isIdle = true;
+  uint8_t  repeats = 0;
+  uint16_t color = 0;
   String   text;
-  int16_t  x = WIDTH;            // cursor X
-  uint16_t w = 0;                // text pixel width
-  uint16_t contentW = 0;   // <-- total width (text + gap + charm if any)
-  uint32_t lastStep = 0;         // pacing
-} g_scroll;
+  int16_t  x = WIDTH;
+  uint16_t w = 0;
+  uint16_t contentW = 0;
+  uint32_t lastStep = 0;
 
+  // NEW: how many charms we plan to draw after the text in this run
+  uint8_t  charmCount = 0;   // when sleepDisabled+idle -> CHARM_COUNT, else 0
+} g_scroll;
 // ---- Text effects mode ----
 enum TextMode : uint8_t { TM_SCROLL = 0, TM_BOUNCE = 1, TM_RAINBOW = 2, TM_MAX };
 static TextMode g_textMode = TM_SCROLL;
@@ -1111,20 +1121,34 @@ void startScroll(bool idle, uint8_t msgId = 0, uint8_t reps = 0, uint16_t color 
   matrix->setTextSize(1);
   matrix->setTextWrap(false);
 
-  // Text width (5x7 font + 1px gap each char -> you used CHAR_W = 6)
   g_scroll.w = g_scroll.text.length() * CHAR_W;
 
-  // If idle and a user charm is set, add its width + a small gap
-  const uint16_t ICON_W   = hasUserCharm() ? CHARM_W : 0;
-  const uint16_t ICON_GAP = hasUserCharm() ? 3 : 0;
+  uint16_t iconStripW = 0;
+  uint16_t iconGap    = 0;
 
-  g_scroll.contentW = g_scroll.w + ICON_GAP + ICON_W;
+  // If sleep is disabled and this is the idle scroll → show ALL charms
+  if (idle && CFG.sleepDisabled) {
+    g_scroll.charmCount = (uint8_t)CHARM_COUNT;
+    if (g_scroll.charmCount) {
+      iconStripW = (g_scroll.charmCount * CHARM_W)
+                 + ((g_scroll.charmCount - 1) * ICON_SPACING);
+      iconGap    = TEXT_ICON_GAP;
+    }
+  } else {
+    // Legacy: single inline user charm (if any)
+    g_scroll.charmCount = 0;
+    if (hasUserCharm()) {
+      iconStripW = CHARM_W;
+      iconGap    = 3;
+    }
+  }
 
-  g_scroll.x = WIDTH;           // start offscreen to the right
+  g_scroll.contentW = g_scroll.w + (iconStripW ? (iconGap + iconStripW) : 0);
+
+  g_scroll.x = WIDTH;
   g_scroll.lastStep = 0;
   g_scroll.active = true;
 }
-
 
 // Perceptual helper: brighten shadows (inverse ~2.2 gamma), clamped to [0,255].
 // This is fast enough and avoids a 256-byte LUT in PROGMEM.
@@ -1228,30 +1252,32 @@ static void renderScrollTick() {
 
   switch (g_textMode) {
     case TM_SCROLL: {
-  // was:
-  // matrix->setTextColor(g_scroll.color);
-  // matrix->setCursor(g_scroll.x, 0);
-  // matrix->print(g_scroll.text);
+      drawNameWithEffect();
 
-  // now:
-  drawNameWithEffect(); // uses g_scroll.text and g_scroll.x
+      // Draw icons after text
+      if (g_scroll.isIdle && CFG.sleepDisabled && g_scroll.charmCount) {
+        int16_t x = g_scroll.x + (int)g_scroll.w + TEXT_ICON_GAP;
+        for (uint8_t i = 0; i < g_scroll.charmCount; ++i) {
+          drawCharm565(i, x, 0);                   // ALL charms: 0..CHARM_COUNT-1
+          x += CHARM_W + ICON_SPACING;
+        }
+      } else if (g_scroll.isIdle && hasUserCharm()) {
+        const int ICON_GAP = 3;
+        const int iconX = g_scroll.x + (int)g_scroll.w + ICON_GAP;
+        drawCharm565(CFG.userCharmId, iconX, 0);   // legacy single charm
+      }
 
-  // keep the inline charm
-  if (g_scroll.isIdle && hasUserCharm()) {
-    const int ICON_GAP = 3;
-    const int iconX = g_scroll.x + (int)g_scroll.w + ICON_GAP;
-    drawCharm565(CFG.userCharmId, iconX, 0);
-  }
+      FastLED.show();
 
-  FastLED.show();
-  g_scroll.x--;
-  if (g_scroll.x < -(int)g_scroll.contentW) {
-    if (!g_scroll.isIdle) {
-      if (--g_scroll.repeats == 0) { startScroll(true); break; }
-    }
-    g_scroll.x = WIDTH;
-  }
-} break;
+      // advance + wrap logic unchanged
+      g_scroll.x--;
+      if (g_scroll.x < -(int)g_scroll.contentW) {
+        if (!g_scroll.isIdle) {
+          if (--g_scroll.repeats == 0) { startScroll(true); break; }
+        }
+        g_scroll.x = WIDTH;
+      }
+      } break;
     case TM_BOUNCE: {
       const int16_t minX = (g_scroll.w > WIDTH) ? -((int16_t)g_scroll.w - WIDTH) : 0;
       const int16_t maxX = (g_scroll.w > WIDTH) ? 0 : (WIDTH - (int16_t)g_scroll.w);
@@ -2070,8 +2096,11 @@ void setup() {
     Serial.println("SLEEP DISABLED");
 
   }
-      startScroll(/*idle*/true);
+  else{
+        playSceneById(STARTUP_SCENE_ID);
 
+    startScroll(/*idle*/true);
+  }
   //startScroll(/*idle*/true);
   //playSceneById(STARTUP_SCENE_ID);
 
@@ -2123,9 +2152,9 @@ void loop() {
 
   handleSerial(); 
   // If sleep is disabled, pin runtime brightness to 20 (0..128 scale), without persisting.
-  if (CFG.sleepDisabled && CFG.brightness != 20) {
-    CFG.brightness = 20;                            // runtime only
-    FastLED.setBrightness(map128to255(20));
+  if (CFG.sleepDisabled && CFG.brightness != 3) {
+    CFG.brightness = 13;                            // runtime only
+    FastLED.setBrightness(map128to255(13));
     FastLED.show();
   }
 
