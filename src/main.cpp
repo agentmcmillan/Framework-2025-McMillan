@@ -2020,9 +2020,18 @@ void handleIR() {
         sendScoreTriplet(CFG.id, (uint16_t)txScore);
       } break;
 
-      case 0x07: // SCORE_RSP_LO
-      case 0x08: // SCORE_RSP_MID
-      case 0x09: // SCORE_RSP_HI
+      #ifndef SCORE_SNIFFER
+        case 0x07: // SCORE_RSP_LO
+        case 0x08: // SCORE_RSP_MID
+        case 0x09: // SCORE_RSP_HI
+      #endif
+
+
+      #ifdef SCORE_SNIIFER
+        case 0x07: processScorePart(badge, 0, p5); break;
+        case 0x08: processScorePart(badge, 1, p5); break;
+        case 0x09: processScorePart(badge, 2, p5); break;
+      #endif
         // (optional: handle assembling others' scores)
         break;
 
