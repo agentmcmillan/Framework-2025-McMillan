@@ -24,12 +24,11 @@ extern "C" {
 #include "scene_kitty.hpp"
 #include "scene_volt.hpp"
 #include "scene_hit.hpp"
+#include "scene_hitbars.hpp"
 //#include "scenes.hpp"
 
 //#define SCORE_SNIFFER
 #define LOUD_SERIAL
-
-
 
 
 
@@ -165,15 +164,6 @@ static void scoreMaybeAutoSave() {
 }
 
 
-// --- SCORE response throttle (default 30s) ---
-#ifndef SCORE_RESP_MIN_MS
-#define SCORE_RESP_MIN_MS 30000UL   // change via -D SCORE_RESP_MIN_MS=5000, etc.
-#endif
-
-// Optional: small jitter to avoid clumping after the throttle window
-#ifndef SCORE_RESP_JITTER_MS
-#define SCORE_RESP_JITTER_MS 15UL
-#endif
 
 static uint32_t g_lastScoreRespMs = 0;
 
@@ -414,9 +404,13 @@ static inline uint32_t sirc20Value(uint8_t op, uint16_t value14) {
       }
       tr->lastComplete = tr->score;
       tr->lastPrintMs  = now;
-
-      Serial.printf("[SCORE] COMPLETE id=%u score=%u\n", tr->id, tr->score);
-      UartLink::sendScore(tr->id, tr->score, 3);
+      if (tr->id < 500){
+        Serial.printf("[SCORE] COMPLETE id=%u score=%u\n", tr->id, tr->score);
+        //blink some stuff here
+        UartLink::sendScore(tr->id, tr->score, 3);
+      }
+      else 
+      {Serial.println("Score Ignored, Control Badge");}
 
       tr->have = 0; // ready for next triplet
     }
@@ -1354,26 +1348,6 @@ static inline uint8_t sleepPulseValue(uint32_t t) {
   return (uint8_t)(lo + (up * span) / half);
 }
 
-static void sleepPulseTick() {
-  const uint32_t now = millis();
-  if (now - g_sleepPulseLast < SLEEP_PULSE_MS) return;
-  g_sleepPulseLast = now;
-
-  // Draw only one pixel to keep current low.
-  // Color: use badge color at very low brightness.
-  uint8_t b = sleepPulseValue(now);
-  // Convert user's color (CFG.colorRGB) to scaled CRGB
-  uint8_t r=(CFG.colorRGB>>16)&0xFF, g=(CFG.colorRGB>>8)&0xFF, bl=CFG.colorRGB&0xFF;
-  // Scale by b/255
-  r = (uint16_t)r * b / 255;
-  g = (uint16_t)g * b / 255;
-  bl= (uint16_t)bl* b / 255;
-
-  // Clear, draw pixel, show (no other animation while asleep)
-  matrix->fillScreen(0);
-  matrix->drawPixel(SLEEP_PULSE_X, SLEEP_PULSE_Y, matrix->Color(r,g,bl));
-  FastLED.show();
-}
 
 
 // Force a message to start immediately (preempt)
@@ -1483,6 +1457,10 @@ static void playSceneById(uint8_t sid) {
 
     case 5: // hit
       sceneStart(scene_hit_frames, SCENE_HIT_FRAMES, SCENE_HIT_FPS);
+      break;
+
+    case 6: // hit
+      sceneStart(scene_hitbars_frames, SCENE_HITBARS_FRAMES, SCENE_HITBARS_FPS);
       break;
 
       default:
@@ -1708,15 +1686,6 @@ void testAllCharms() {
 }
 
 
-// ---- Choose which scene+frame to show while asleep ----
-#ifndef SLEEP_SCENE_ID
-#define SLEEP_SCENE_ID 3     // you said "ID 2" (e.g., fuse)
-#endif
-
-#ifndef SLEEP_FRAME_INDEX
-#define SLEEP_FRAME_INDEX 2  // which frame from that scene
-#endif
-
 struct SceneDef {
   const uint16_t (*frames)[WIDTH*HEIGHT];
   uint8_t count;
@@ -1731,6 +1700,8 @@ static bool getSceneDef(uint8_t sid, SceneDef &out) {
     case 2: out.frames = scene_fuse_frames;  out.count = SCENE_FUSE_FRAMES;  out.fps = SCENE_FUSE_FPS;  return true;
     case 3: out.frames = scene_kitty_frames; out.count = SCENE_KITTY_FRAMES; out.fps = SCENE_KITTY_FPS; return true;
     case 4: out.frames = scene_volt_frames;  out.count = SCENE_VOLT_FRAMES;  out.fps = SCENE_VOLT_FPS;  return true;
+    case 5: out.frames = scene_hit_frames; out.count = SCENE_HIT_FRAMES; out.fps = SCENE_HIT_FPS; return true;
+    case 6: out.frames = scene_hitbars_frames;  out.count = SCENE_HITBARS_FRAMES;  out.fps = SCENE_HITBARS_FPS;  return true;
     default: return false;
   }
 }
@@ -1824,8 +1795,6 @@ static inline void sleepExit() {
 
   Serial.println("[SLEEP] exited");
 }
-
-
 
 
 
@@ -1971,8 +1940,8 @@ void handleIR() {
           }
         }
 
-        fireAnimStart();
-        playSceneById(5);
+        //fireAnimStart();
+        playSceneById(6);
       } break;
 
       case 0x01: { // SLEEP (value14: minutes 0..127)

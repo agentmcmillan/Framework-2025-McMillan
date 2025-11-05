@@ -68,6 +68,17 @@ bool saveConfig(const BadgeConfig &in);
 bool loadHits(JsonDocument &doc);      // map "attackerId" -> count
 bool saveHits(const JsonDocument &doc);
 
+// --- SCORE response throttle (default 30s) ---
+#ifndef SCORE_RESP_MIN_MS
+#define SCORE_RESP_MIN_MS 30000UL   // change via -D SCORE_RESP_MIN_MS=5000, etc.
+#endif
+
+// Optional: small jitter to avoid clumping after the throttle window
+#ifndef SCORE_RESP_JITTER_MS
+#define SCORE_RESP_JITTER_MS 15UL
+#endif
+
+
 
 // ---- Sleep pulse config ----
 #ifndef SLEEP_PULSE_MS
@@ -82,12 +93,6 @@ bool saveHits(const JsonDocument &doc);
 #ifndef SLEEP_PULSE_BRIGHT_MAX
 #define SLEEP_PULSE_BRIGHT_MAX 4    // keep tiny to save power
 #endif
-#ifndef SLEEP_PULSE_X
-#define SLEEP_PULSE_X 0              // top-left corner (x,y)
-#endif
-#ifndef SLEEP_PULSE_Y
-#define SLEEP_PULSE_Y 0
-#endif
 
 #ifndef SLEEP_BRIGHT_MIN_128
 #define SLEEP_BRIGHT_MIN_128 1         // min brightness (0..128 scale)
@@ -95,6 +100,16 @@ bool saveHits(const JsonDocument &doc);
 #ifndef SLEEP_BRIGHT_MAX_128
 #define SLEEP_BRIGHT_MAX_128 4       // max brightness (0..128 scale)
 #endif
+
+// ---- Choose which scene+frame to show while asleep ----
+#ifndef SLEEP_SCENE_ID
+#define SLEEP_SCENE_ID 3     // you said "ID 2" (e.g., fuse)
+#endif
+
+#ifndef SLEEP_FRAME_INDEX
+#define SLEEP_FRAME_INDEX 2  // which frame from that scene
+#endif
+
 
 static uint32_t g_sleepBreathLast = 0;
 
