@@ -88,17 +88,17 @@ bool saveHits(const JsonDocument &doc);
 #define SLEEP_PULSE_PERIOD_MS 4000UL // full breathe cycle
 #endif
 #ifndef SLEEP_PULSE_BRIGHT_MIN
-#define SLEEP_PULSE_BRIGHT_MIN 1     // 0..255
+#define SLEEP_PULSE_BRIGHT_MIN 2     // 0..255
 #endif
 #ifndef SLEEP_PULSE_BRIGHT_MAX
-#define SLEEP_PULSE_BRIGHT_MAX 4    // keep tiny to save power
+#define SLEEP_PULSE_BRIGHT_MAX 5    // keep tiny to save power
 #endif
 
 #ifndef SLEEP_BRIGHT_MIN_128
-#define SLEEP_BRIGHT_MIN_128 1         // min brightness (0..128 scale)
+#define SLEEP_BRIGHT_MIN_128 2         // min brightness (0..128 scale)
 #endif
 #ifndef SLEEP_BRIGHT_MAX_128
-#define SLEEP_BRIGHT_MAX_128 4       // max brightness (0..128 scale)
+#define SLEEP_BRIGHT_MAX_128 5       // max brightness (0..128 scale)
 #endif
 
 // ---- Choose which scene+frame to show while asleep ----
@@ -143,7 +143,7 @@ static uint32_t g_battLastMs = 0;
 
 // Thresholds in millivolts (tweak later when we know the real number)
 #ifndef LOW_BATT_THRESH_MV
-#define LOW_BATT_THRESH_MV 2200  // default ~2.4 V pack
+#define LOW_BATT_THRESH_MV 2100  // default ~2.4 V pack
 #endif
 #ifndef LOW_BATT_HYST_MV
 #define LOW_BATT_HYST_MV 100     // 0.10 V hysteresis

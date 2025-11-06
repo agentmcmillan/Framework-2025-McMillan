@@ -28,8 +28,8 @@ extern "C" {
 #include "scene_tx.hpp"
 //#include "scenes.hpp"
 
-#define SCORE_SNIFFER
-#define LOUD_SERIAL
+//#define SCORE_SNIFFER
+//#define LOUD_SERIAL
 
 
 
