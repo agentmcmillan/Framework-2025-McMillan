@@ -72,8 +72,26 @@ They won't interfere with each other. See `WIRING_WITH_ESP32.md` for detailed co
 Install via **Sketch → Include Library → Manage Libraries**:
 
 1. **Adafruit NeoPixel** (for LED matrix control)
-2. **Adafruit MPU6050** (for IMU sensor)
-3. **Adafruit Unified Sensor** (dependency for MPU6050)
+   - Search: "Adafruit NeoPixel"
+   - Install the library by Adafruit
+
+2. **MPU6050** (for IMU sensor - based on jrowberg's i2cdevlib)
+   - Search: "MPU6050"
+   - Install: **MPU6050 by Electronic Cats** (recommended)
+   - This is based on the popular library from the HowToMechatronics tutorial
+
+3. **I2Cdev** (dependency for MPU6050)
+   - Search: "I2Cdev"
+   - Should auto-install with MPU6050
+   - If not found, manually install from: https://github.com/jrowberg/i2cdevlib
+
+**Alternative Manual Installation:**
+If you prefer to install manually (as shown in HowToMechatronics tutorial):
+1. Download: https://github.com/jrowberg/i2cdevlib/archive/master.zip
+2. Extract the ZIP file
+3. Copy `Arduino/I2Cdev` folder to your Arduino `libraries/` folder
+4. Copy `Arduino/MPU6050` folder to your Arduino `libraries/` folder
+5. Restart Arduino IDE
 
 ### Upload Instructions
 
@@ -120,10 +138,13 @@ Open **Tools → Serial Monitor** (115200 baud) to see:
 
 ### MPU6050 Configuration
 
-- Accelerometer range: ±2G
-- Gyroscope range: ±250°/s
-- Low-pass filter: 21 Hz bandwidth
-- Update rate: ~33 FPS (30ms delay)
+- **Library:** jrowberg's i2cdevlib (MPU6050 by Electronic Cats)
+- **I2C Speed:** 400kHz (Fast Mode)
+- **Accelerometer range:** ±2G (16384 LSB/g)
+- **Gyroscope range:** ±250°/s (131 LSB/°/s)
+- **Digital Low Pass Filter (DLPF):** 42 Hz bandwidth
+- **Update rate:** ~33 FPS (30ms delay)
+- **I2C Address:** 0x68 (default) or 0x69 (if AD0 is HIGH)
 
 ### Physics Simulation
 
@@ -186,7 +207,9 @@ The liquid/bubble effects use a simple cellular automaton:
 
 - **MPU6050 Datasheet:** https://invensense.tdk.com/products/motion-tracking/6-axis/mpu-6050/
 - **I2C Protocol:** https://learn.sparkfun.com/tutorials/i2c
-- **Adafruit MPU6050 Guide:** https://learn.adafruit.com/mpu6050-6-dof-accelerometer-and-gyro
+- **HowToMechatronics Tutorial:** https://howtomechatronics.com/tutorials/arduino/arduino-and-mpu6050-accelerometer-and-gyroscope-tutorial/
+- **jrowberg's i2cdevlib GitHub:** https://github.com/jrowberg/i2cdevlib
+- **I2Cdev Documentation:** https://www.i2cdevlib.com/devices/mpu6050
 
 ## License
 

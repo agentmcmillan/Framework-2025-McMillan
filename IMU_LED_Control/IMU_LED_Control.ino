@@ -33,15 +33,29 @@
  * - MPU6050: 0x68 (default, or 0x69 if AD0 pulled high)
  * - ESP32 ProS3: 0x42
  *
- * Required Libraries:
- * - Adafruit_NeoPixel
- * - Adafruit MPU6050
- * - Adafruit Unified Sensor
+ * Required Libraries (Install via Library Manager):
+ * - Adafruit_NeoPixel (for LED control)
+ * - MPU6050 by Electronic Cats (based on jrowberg's I2Cdev)
+ *   Search: "MPU6050" and install the one by Electronic Cats
+ * - I2Cdev by Jeff Rowberg (dependency)
+ *   Search: "I2Cdev" or install from: https://github.com/jrowberg/i2cdevlib
+ *
+ * Library Installation:
+ * Method 1 - Arduino Library Manager (Recommended):
+ *   1. Sketch → Include Library → Manage Libraries
+ *   2. Search "MPU6050" → Install "MPU6050 by Electronic Cats"
+ *   3. Search "I2Cdev" → Install if not automatically installed
+ *
+ * Method 2 - Manual Installation:
+ *   1. Download: https://github.com/jrowberg/i2cdevlib/archive/master.zip
+ *   2. Extract Arduino/I2Cdev and Arduino/MPU6050 folders
+ *   3. Copy both to Arduino/libraries/ folder
+ *   4. Restart Arduino IDE
  */
 
 #include <Adafruit_NeoPixel.h>
-#include <Adafruit_MPU6050.h>
-#include <Adafruit_Sensor.h>
+#include <I2Cdev.h>
+#include <MPU6050.h>
 #include <Wire.h>
 
 // Hardware pin definitions
@@ -68,7 +82,7 @@ enum AnimationMode {
 };
 
 Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
-Adafruit_MPU6050 mpu;
+MPU6050 mpu;
 
 AnimationMode currentMode = MODE_LIQUID;
 unsigned long lastModeChange = 0;
@@ -77,18 +91,26 @@ const unsigned long MODE_DEBOUNCE = 300;
 // Liquid simulation state
 float liquid[LED_COLS][LED_ROWS] = {0};  // Amount of "liquid" at each position
 
+// MPU6050 raw data
+int16_t ax, ay, az;
+int16_t gx, gy, gz;
+
 void setup() {
   Serial.begin(115200);
+
+  // Wait for serial connection (optional, comment out for standalone operation)
+  delay(1000);
 
   // Initialize buttons
   pinMode(BUTTON_LEFT, INPUT_PULLUP);
   pinMode(BUTTON_CENTER, INPUT_PULLUP);
   pinMode(BUTTON_RIGHT, INPUT_PULLUP);
 
-  // Initialize I2C with custom pins
+  // Initialize I2C with custom pins for RP2040
   Wire.setSDA(SDA_PIN);
   Wire.setSCL(SCL_PIN);
   Wire.begin();
+  Wire.setClock(400000);  // 400kHz Fast Mode (MPU6050 supports up to 400kHz)
 
   // Initialize LED matrix
   strip.begin();
@@ -100,16 +122,27 @@ void setup() {
   Serial.println("Initializing MPU6050 on shared I2C bus...");
   Serial.println("Note: ESP32 ProS3 is at 0x42, MPU6050 at 0x68");
 
-  if (!mpu.begin(0x68, &Wire)) {
+  mpu.initialize();
+
+  // Test connection
+  if (!mpu.testConnection()) {
     Serial.println("Failed to find MPU6050 chip at address 0x68!");
     Serial.println("Check wiring and ensure I2C bus is shared correctly.");
-    Serial.println("If MPU6050 AD0 pin is HIGH, try address 0x69.");
+    Serial.println("If MPU6050 AD0 pin is HIGH, it uses address 0x69.");
 
-    // Show error pattern on LEDs
-    for (int i = 0; i < LED_COUNT; i++) {
-      strip.setPixelColor(i, strip.Color(255, 0, 0));
+    // Show error pattern on LEDs (red flash)
+    for (int blink = 0; blink < 5; blink++) {
+      for (int i = 0; i < LED_COUNT; i++) {
+        strip.setPixelColor(i, strip.Color(255, 0, 0));
+      }
+      strip.show();
+      delay(200);
+      strip.clear();
+      strip.show();
+      delay(200);
     }
-    strip.show();
+
+    Serial.println("System halted. Fix wiring and reset.");
     while (1) {
       delay(10);
     }
@@ -118,11 +151,17 @@ void setup() {
   Serial.println("MPU6050 Found on shared I2C bus!");
 
   // Configure MPU6050
-  mpu.setAccelerometerRange(MPU6050_RANGE_2_G);
-  mpu.setGyroRange(MPU6050_RANGE_250_DEG);
-  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+  // Set accelerometer range to ±2g (most sensitive)
+  mpu.setFullScaleAccelRange(MPU6050_ACCEL_FS_2);
 
-  // Success animation
+  // Set gyroscope range to ±250°/s (most sensitive)
+  mpu.setFullScaleGyroRange(MPU6050_GYRO_FS_250);
+
+  // Enable Digital Low Pass Filter (DLPF) for smoother readings
+  // Mode 3 = Bandwidth 44Hz (good balance of smoothness and responsiveness)
+  mpu.setDLPFMode(MPU6050_DLPF_BW_42);
+
+  // Success animation (green fade-in)
   for (int brightness = 0; brightness < MAX_BRIGHTNESS; brightness += 4) {
     strip.setBrightness(brightness);
     for (int i = 0; i < LED_COUNT; i++) {
@@ -134,25 +173,33 @@ void setup() {
   delay(500);
   strip.clear();
   strip.show();
+  strip.setBrightness(MAX_BRIGHTNESS);
 
-  Serial.println("Ready! Use buttons to change modes:");
+  Serial.println("\n=== Ready! ===");
+  Serial.println("Use buttons to change modes:");
   Serial.println("LEFT: Liquid mode");
   Serial.println("CENTER: Bubble mode");
   Serial.println("RIGHT: Tilt meter mode");
+  Serial.println("");
 }
 
 void loop() {
   // Check for mode changes
   handleButtons();
 
-  // Get sensor readings
-  sensors_event_t accel, gyro, temp;
-  mpu.getEvent(&accel, &gyro, &temp);
+  // Get sensor readings (raw values)
+  mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
 
-  // Normalize accelerometer values (-1 to 1)
-  float accelX = constrain(accel.acceleration.x / 10.0, -1.0, 1.0);
-  float accelY = constrain(accel.acceleration.y / 10.0, -1.0, 1.0);
-  float accelZ = constrain(accel.acceleration.z / 10.0, -1.0, 1.0);
+  // Convert raw accelerometer values to g-force (-1 to 1)
+  // MPU6050 at ±2g range: 16384 LSB/g
+  float accelX = (float)ax / 16384.0;
+  float accelY = (float)ay / 16384.0;
+  float accelZ = (float)az / 16384.0;
+
+  // Constrain to reasonable range
+  accelX = constrain(accelX, -1.0, 1.0);
+  accelY = constrain(accelY, -1.0, 1.0);
+  accelZ = constrain(accelZ, -1.0, 1.0);
 
   // Run current animation mode
   switch (currentMode) {
