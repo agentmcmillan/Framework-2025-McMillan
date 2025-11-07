@@ -225,6 +225,21 @@ install_arduino_libraries() {
     install_library_git "FastLED" \
         "https://github.com/FastLED/FastLED.git"
 
+    # I2Cdev (for MPU6050 IMU sensor)
+    print_info "Installing I2Cdev library..."
+    local i2cdev_url="https://github.com/jrowberg/i2cdevlib.git"
+    local i2cdev_temp="$ARDUINO_LIBRARIES/i2cdevlib_temp"
+
+    if [ ! -d "$ARDUINO_LIBRARIES/I2Cdev" ]; then
+        git clone --quiet "$i2cdev_url" "$i2cdev_temp"
+        cp -R "$i2cdev_temp/Arduino/I2Cdev" "$ARDUINO_LIBRARIES/"
+        cp -R "$i2cdev_temp/Arduino/MPU6050" "$ARDUINO_LIBRARIES/"
+        rm -rf "$i2cdev_temp"
+        print_status "I2Cdev and MPU6050 libraries installed"
+    else
+        print_status "I2Cdev and MPU6050 already installed"
+    fi
+
     # Install Seeed libraries from repo
     install_seeed_gfx
     install_seeed_round_display
@@ -338,6 +353,8 @@ This folder contains libraries for the Framework Badge dual-MCU project.
 INSTALLED LIBRARIES:
 -------------------
 ✓ Adafruit_NeoPixel      - LED matrix control (WS2812B)
+✓ I2Cdev                 - I2C device communication library
+✓ MPU6050                - IMU sensor (accelerometer/gyroscope)
 ✓ QRCode                 - QR code generation
 ✓ ArduinoJson            - JSON parsing for web API
 ✓ TFT_eSPI               - LCD display driver (GC9A01) - for RP2040
@@ -435,6 +452,7 @@ print_summary() {
 
     print_info "Installed Libraries:"
     echo "  - Adafruit_NeoPixel (LED matrix)"
+    echo "  - I2Cdev + MPU6050 (IMU sensor)"
     echo "  - QRCode (QR generation)"
     echo "  - ArduinoJson (JSON parsing)"
     echo "  - TFT_eSPI (LCD displays for RP2040)"
