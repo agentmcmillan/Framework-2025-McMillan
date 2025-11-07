@@ -253,17 +253,17 @@ void loop() {}
 ```cpp
 #include <Wire.h>
 
-#define I2C_SDA 8   // ProS3 STEMMA QT SDA
-#define I2C_SCL 9   // ProS3 STEMMA QT SCL
+#define I2C_SDA 1   // ProS3 GPIO1 for badge connection
+#define I2C_SCL 2   // ProS3 GPIO2 for badge connection
 
 void setup() {
   Serial.begin(115200);
   delay(1000);
 
-  Wire.begin(I2C_SDA, I2C_SCL);  // Initialize I2C on STEMMA QT pins
+  Wire.begin(I2C_SDA, I2C_SCL);  // Initialize I2C on GPIO1/2
 
   Serial.println("\n=== I2C Scanner (ProS3) ===");
-  Serial.println("Scanning I2C bus (GPIO8=SDA, GPIO9=SCL)...");
+  Serial.println("Scanning I2C bus (GPIO1=SDA, GPIO2=SCL)...");
 
   byte error, address;
   int nDevices = 0;
@@ -295,16 +295,24 @@ void loop() {}
 
 ## ProS3 Specific Features
 
-### STEMMA QT Connector (I2C)
+### I2C Configuration for Badge Connection
 
-The ProS3 has a built-in STEMMA QT (Qwiic compatible) connector:
+The ProS3 uses GPIO header pins for the Framework Badge I2C connection:
 
-- **SDA:** GPIO8
-- **SCL:** GPIO9
+- **SDA:** GPIO1 (header pin)
+- **SCL:** GPIO2 (header pin)
+- **I2C Address:** 0x42 (slave mode)
+
+This configuration **leaves the STEMMA QT connector (GPIO8/GPIO9) free** for:
+- Additional I2C sensors (IMU, environmental, etc.)
+- I2C displays (OLED, LCD, e-ink)
+- Other STEMMA QT/Qwiic devices (plug-and-play!)
+
+**STEMMA QT Connector Details:**
+- **SDA:** GPIO8 (available for expansion)
+- **SCL:** GPIO9 (available for expansion)
 - **VCC:** 3.3V (from LDO1)
 - **GND:** Ground
-
-This is **perfect for connecting to the Framework Badge** - just need a STEMMA QT to SAO adapter cable!
 
 ### Dual LDO Power Management
 

@@ -26,10 +26,10 @@ SAO PORT CONNECTION (4-pin Standard v0.1)
 │   ┌────────┐                         │
 │   │  3V3   │ ← Pin 1 (VCC)           │
 │   │  GND   │ ← Pin 2 (GND)           │
-│   │ GPIO8  │ ← Pin 3 (SDA)           │
-│   │ GPIO9  │ ← Pin 4 (SCL)           │
+│   │ GPIO1  │ ← Pin 3 (SDA)           │
+│   │ GPIO2  │ ← Pin 4 (SCL)           │
 │   └────────┘                         │
-│   OR use STEMMA QT connector!       │
+│   STEMMA QT (GPIO8/9) left free!    │
 └──────────────────────────────────────┘
 
 
@@ -40,8 +40,8 @@ Framework Badge RP2040          ESP32 ProS3            Wire Color (Suggested)
 ─────────────────────────       ─────────────────      ────────────────────
 SAO Pin 1: VCC (+3.3V)      →   3V3 pin                Red
 SAO Pin 2: GND              →   GND                    Black
-SAO Pin 3: SDA (IO#23)      →   GPIO 8 (SDA)           Green or Blue
-SAO Pin 4: SCL (IO#24)      →   GPIO 9 (SCL)           Yellow
+SAO Pin 3: SDA (IO#23)      →   GPIO 1 (SDA)           Green or Blue
+SAO Pin 4: SCL (IO#24)      →   GPIO 2 (SCL)           Yellow
 
 **ProS3 Features:**
 - 16MB Flash (4× more storage than ESP32-C6)
@@ -51,7 +51,8 @@ SAO Pin 4: SCL (IO#24)      →   GPIO 9 (SCL)           Yellow
 - Xtensa dual-core @ 240MHz
 - Dual 700mA LDOs (ultra-stable power)
 - Built-in battery charging circuit
-- STEMMA QT connector (GPIO8/GPIO9)
+- I2C for badge: GPIO1 (SDA), GPIO2 (SCL)
+- STEMMA QT available: GPIO8/GPIO9 (for other I2C devices)
 - RGB LED on GPIO48 for status
 - Ultra-low 10µA deep sleep
 
@@ -78,8 +79,8 @@ ESP32 ProS3 (Unexpected Maker) - Recommended for this project
  IO5 ─┤ GPIO5                         IO35 ├─ GPIO35
  IO6 ─┤ GPIO6                         IO36 ├─ GPIO36
  IO7 ─┤ GPIO7                         IO37 ├─ GPIO37
- IO8 ─┤ GPIO8  (SDA) ← STEMMA QT      IO38 ├─ GPIO38
- IO9 ─┤ GPIO9  (SCL) ← STEMMA QT      IO39 ├─ GPIO39
+ IO8 ─┤ GPIO8  (STEMMA QT SDA)       IO38 ├─ GPIO38
+ IO9 ─┤ GPIO9  (STEMMA QT SCL)       IO39 ├─ GPIO39
 IO10 ─┤ GPIO10                        IO40 ├─ GPIO40
 IO11 ─┤ GPIO11                        IO41 ├─ GPIO41
 IO12 ─┤ GPIO12                        IO42 ├─ GPIO42
@@ -88,8 +89,8 @@ IO14 ─┤ GPIO14                        IO44 ├─ GPIO44 (RX)
       │                                     │
       └─────────────────────────────────────┘
 
-I2C for SAO Port: GPIO8 (SDA), GPIO9 (SCL)
-Note: STEMMA QT connector already uses these pins!
+I2C for Badge (SAO Port): GPIO1 (SDA), GPIO2 (SCL)
+STEMMA QT Connector: GPIO8 (SDA), GPIO9 (SCL) - Available for other devices!
 
 
 XIAO ESP32-C6 / ESP32-S3 (Seeed Studio)
@@ -127,11 +128,12 @@ RP2040 (Master - Framework Badge):
   - Clock: 100kHz (standard I2C)
   - Pull-ups: 4.7kΩ on both SDA and SCL (may be internal)
 
-ESP32 ProS3 (Slave - Option 1):
-  - SDA: GPIO 8 (hardware I2C, STEMMA QT)
-  - SCL: GPIO 9 (hardware I2C, STEMMA QT)
+ESP32 ProS3 (Slave):
+  - SDA: GPIO 1 (hardware I2C via header pins)
+  - SCL: GPIO 2 (hardware I2C via header pins)
   - Address: 0x42
   - Pull-ups: Internal 45kΩ (external 4.7kΩ recommended for reliability)
+  - STEMMA QT: GPIO8/GPIO9 left free for expansion devices
   - Advantage: Can use STEMMA QT connector for plug-and-play connection!
 
 XIAO ESP32-C6 or S3 (Slave - Option 2):
@@ -170,57 +172,30 @@ Note: SAO port reuses Whisker header pins in 2x2 arrangement on TOP side
 ASSEMBLY INSTRUCTIONS
 ═══════════════════════════════════════════════════════════════════════════
 
-Option 1: ESP32 ProS3 with STEMMA QT Cable (Easiest!)
-───────────────────────────────────────────────────────────────────────────
-1. Solder 4-pin JST SH connector (STEMMA QT compatible) to badge SAO port
-   - Pin 1 (VCC) → Black wire (GND on STEMMA QT standard)
-   - Pin 2 (GND) → Red wire (3.3V on STEMMA QT standard)
-   - Pin 3 (SDA) → Blue wire (SDA)
-   - Pin 4 (SCL) → Yellow wire (SCL)
-
-   **IMPORTANT:** SAO and STEMMA QT have different pinouts! You may need to
-   rewire a STEMMA QT cable or create a custom adapter.
-
-2. Plug STEMMA QT cable into ProS3's onboard STEMMA QT connector
-3. No additional wiring needed!
-
-Alternative for ProS3: Wire directly to GPIO8 (SDA) and GPIO9 (SCL)
-
-Option 2: Direct Socket Connection (XIAO boards)
-───────────────────────────────────────────────────────────────────────────
-1. Solder 2x2 female header socket to SAO port location on badge (top side)
-2. Solder 2x2 male header pins to XIAO ESP32-C6/S3
-3. Align XIAO pins with SAO socket (verify Pin 1 = VCC!)
-4. Press XIAO onto socket
-5. Secure with hot glue or 3D-printed bracket (optional)
-
-Option 3: Wired Connection (Any ESP32 board)
+Option 1: Direct GPIO Wiring to Header Pins (Standard)
 ───────────────────────────────────────────────────────────────────────────
 1. Solder 2x2 header to SAO port on badge
-2. Use 4 jumper wires (10-15cm) to connect:
+2. Use 4 jumper wires (10-15cm) to connect to ProS3 GPIO header:
 
-   For XIAO ESP32-C6/S3:
-     Badge SAO Pin 1 → XIAO 3V3
-     Badge SAO Pin 2 → XIAO GND
-     Badge SAO Pin 3 → XIAO D4/GPIO6
-     Badge SAO Pin 4 → XIAO D5/GPIO7
+   Badge SAO Pin 1 → ProS3 3V3 pin
+   Badge SAO Pin 2 → ProS3 GND pin
+   Badge SAO Pin 3 → ProS3 GPIO1 (SDA)
+   Badge SAO Pin 4 → ProS3 GPIO2 (SCL)
 
-   For ESP32 ProS3:
-     Badge SAO Pin 1 → ProS3 3V3
-     Badge SAO Pin 2 → ProS3 GND
-     Badge SAO Pin 3 → ProS3 GPIO8 (SDA)
-     Badge SAO Pin 4 → ProS3 GPIO9 (SCL)
+3. Mount ProS3 separately (3D printed case, velcro, standoffs, etc.)
 
-3. Mount ESP32 board separately (velcro, 3D printed case, etc.)
+**Advantage:** Leaves STEMMA QT connector (GPIO8/9) free for expansion!
 
-Option 4: Custom PCB
+Option 2: Custom Adapter PCB
 ───────────────────────────────────────────────────────────────────────────
 1. Design small PCB with:
      - 2x2 male header for SAO port
-     - ESP32 board socket or pads
-     - Optional: LED indicator, button, voltage regulator
-2. Route traces based on your ESP32 board choice
-3. Fabricate and assemble
+     - ProS3 socket or castellated edge mounting
+     - Route: SAO Pin 1→3V3, Pin 2→GND, Pin 3→GPIO1, Pin 4→GPIO2
+     - Optional: LED status indicator, voltage regulator
+2. Fabricate and assemble
+
+**Advantage:** Clean, compact installation. STEMMA QT still accessible.
 
 
 POWER CONSIDERATIONS

@@ -5,7 +5,8 @@ Integration of **Unexpected Maker ESP32 ProS3** via SAO port to add WiFi/Bluetoo
 **Why ProS3?**
 - **16MB Flash** - Plenty of space for web interfaces and OTA updates
 - **8MB PSRAM** - Smooth graphics and buffering
-- **STEMMA QT Connector** - Plug-and-play I2C connection (GPIO8/GPIO9)
+- **I2C via GPIO Header** - GPIO1 (SDA), GPIO2 (SCL)
+- **STEMMA QT Free** - GPIO8/GPIO9 available for other I2C devices!
 - **Dual 700mA LDOs** - Rock-solid power for badge + WiFi operation
 - **Battery Charging** - Built-in LiPo management
 - **Ultra-low Deep Sleep** - Only 10µA in deep sleep mode
@@ -66,7 +67,8 @@ Integration of **Unexpected Maker ESP32 ProS3** via SAO port to add WiFi/Bluetoo
 ### ESP32 ProS3 - I2C Slave
 - **Role:** Wireless communication coprocessor
 - **I2C Slave Address:** 0x42 (configurable)
-- **I2C Pins:** GPIO8 (SDA), GPIO9 (SCL) via STEMMA QT connector
+- **I2C Pins:** GPIO1 (SDA), GPIO2 (SCL) via header pins
+- **STEMMA QT:** GPIO8/GPIO9 left free for expansion devices
 - **Capabilities:**
   - WiFi (802.11b/g/n, 2.4GHz)
   - Bluetooth 5.0 (BLE)
@@ -74,37 +76,27 @@ Integration of **Unexpected Maker ESP32 ProS3** via SAO port to add WiFi/Bluetoo
   - BLE beacon/mesh networking
   - HTTP client for cloud integration
   - OTA firmware updates
-  - 27 additional GPIOs for expansion
+  - 25 additional GPIOs for expansion (GPIO8/9 reserved for STEMMA QT)
 
 ## Pin Connections
 
-### Option 1: STEMMA QT Connector (Recommended - Easiest!)
+### Direct GPIO Header Wiring
 
-The ProS3 has a built-in STEMMA QT connector that makes I2C connection plug-and-play.
-
-```
-Framework Badge SAO Port          ESP32 ProS3 STEMMA QT
-─────────────────────────         ─────────────────────────
-Pin 1: VCC (+3.3V)            →   Red wire (3.3V)
-Pin 2: GND                    →   Black wire (GND)
-Pin 3: SDA (IO#23 or IO#24)   →   Blue wire (GPIO 8 SDA)
-Pin 4: SCL (IO#24 or IO#25)   →   Yellow wire (GPIO 9 SCL)
-```
-
-**Note:** You'll need a custom SAO-to-STEMMA QT adapter cable since the pinouts differ. Alternatively, use Option 2 below.
-
-### Option 2: Direct GPIO Wiring
-
-Wire directly to the ProS3's GPIO header pins:
+Wire the badge's SAO port directly to the ProS3's GPIO header pins:
 
 ```
-Framework Badge SAO Port          ESP32 ProS3
-─────────────────────────         ─────────────────
+Framework Badge SAO Port          ESP32 ProS3 GPIO Header
+─────────────────────────         ───────────────────────────
 Pin 1: VCC (+3.3V)            →   3V3 pin
 Pin 2: GND                    →   GND
-Pin 3: SDA (IO#23 or IO#24)   →   GPIO 8 (SDA)
-Pin 4: SCL (IO#24 or IO#25)   →   GPIO 9 (SCL)
+Pin 3: SDA (IO#23 or IO#24)   →   GPIO 1 (SDA)
+Pin 4: SCL (IO#24 or IO#25)   →   GPIO 2 (SCL)
 ```
+
+**Advantage:** Leaves the ProS3's STEMMA QT connector (GPIO8/GPIO9) free for:
+- Additional I2C sensors (IMU, environmental sensors, etc.)
+- I2C displays (OLED, e-ink, etc.)
+- Other STEMMA QT devices (plug-and-play!)
 
 **Note:** SAO port reuses Whisker header pins in a different physical arrangement. See `WIRING.txt` for complete wiring diagrams.
 
@@ -115,11 +107,12 @@ Pin 4: SCL (IO#24 or IO#25)   →   GPIO 9 (SCL)
 - **Pull-ups:** 4.7kΩ on both SDA and SCL (may be built into badge)
 
 ### ESP32 ProS3 I2C Configuration
-- **SDA:** GPIO 8 (STEMMA QT connector)
-- **SCL:** GPIO 9 (STEMMA QT connector)
+- **SDA:** GPIO 1 (header pin)
+- **SCL:** GPIO 2 (header pin)
 - **I2C Address:** 0x42
 - **Clock Speed:** 100kHz (standard I2C)
 - **Pull-ups:** Internal 45kΩ (external 4.7kΩ recommended for reliability)
+- **STEMMA QT:** GPIO8/GPIO9 available for expansion devices
 
 ## Communication Protocol
 

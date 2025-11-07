@@ -8,10 +8,11 @@
  * - Unexpected Maker ESP32 ProS3
  * - 16MB Flash (perfect for storing web files!)
  * - 8MB PSRAM (buffering LED data)
- * - STEMMA QT connector (GPIO8/GPIO9 for I2C)
+ * - I2C via GPIO header pins (GPIO1/GPIO2)
  *
- * Connection: SAO port (4-pin) or STEMMA QT connector
+ * Connection: SAO port (4-pin) to GPIO header
  * Power: 3.3V from badge via SAO port
+ * I2C: GPIO1 (SDA), GPIO2 (SCL)
  *
  * Features:
  * - WiFi AP mode (SSID: "PixelKitty-XXXX")
@@ -19,6 +20,7 @@
  * - QR code data generation for easy WiFi connection
  * - I2C communication with RP2040 for LED control
  * - Captive portal for automatic web page redirect
+ * - STEMMA QT port (GPIO8/9) available for other I2C devices
  */
 
 #include <Wire.h>
@@ -33,14 +35,16 @@
 
 #define BOARD_NAME      "ESP32 ProS3"
 
-// I2C Configuration (STEMMA QT connector)
-#define I2C_SDA         8      // GPIO 8 (STEMMA QT SDA)
-#define I2C_SCL         9      // GPIO 9 (STEMMA QT SCL)
+// I2C Configuration (GPIO Header Pins)
+#define I2C_SDA         1      // GPIO 1 (SDA on header)
+#define I2C_SCL         2      // GPIO 2 (SCL on header)
 #define I2C_SLAVE_ADDR  0x42   // I2C slave address (must match RP2040)
 
 // ProS3-specific hardware
 #define RGB_LED_PIN     48     // Built-in RGB LED
 #define RGB_BRIGHTNESS  20     // 0-255, keep low for power savings
+
+// Note: GPIO8/9 (STEMMA QT) are left free for other I2C devices
 
 // ============================================================================
 // WIFI AP CONFIGURATION
@@ -110,7 +114,7 @@ void setup() {
   Serial.println("\n\n=== ESP32 ProS3 Enhanced ===");
   Serial.println("WiFi AP + Web Server + LED Designer");
   Serial.println("Hardware: 16MB Flash, 8MB PSRAM");
-  Serial.println("I2C: STEMMA QT connector (GPIO8/GPIO9)");
+  Serial.println("I2C: GPIO1 (SDA), GPIO2 (SCL)");
 
   // Generate unique SSID with chip ID
   uint32_t chipId = 0;
